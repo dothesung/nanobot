@@ -151,6 +151,7 @@ class ProvidersConfig(BaseModel):
     gemini: ProviderConfig = Field(default_factory=ProviderConfig)
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
     aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
+    genplus: ProviderConfig = Field(default_factory=ProviderConfig)  # GenPlus Gemini API
 
 
 class GatewayConfig(BaseModel):
@@ -172,7 +173,7 @@ class WebToolsConfig(BaseModel):
 
 class ExecToolConfig(BaseModel):
     """Shell exec tool configuration."""
-    timeout: int = 60
+    timeout: int = 180
 
 
 class ToolsConfig(BaseModel):

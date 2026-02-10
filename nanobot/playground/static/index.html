@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nanobot Playground</title>
+    <meta name="description" content="nanobot Playground — Interactive AI chat with multi-model support">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-icon">🐈</span>
+                <span class="logo-text">nanobot</span>
+            </div>
+            <button class="sidebar-close" id="sidebarClose" aria-label="Close sidebar">✕</button>
+        </div>
+
+        <div class="sidebar-content">
+            <!-- Provider Selection -->
+            <div class="config-section">
+                <label class="config-label">Provider</label>
+                <select id="providerSelect" class="config-select">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+
+            <!-- Model Selection -->
+            <div class="config-section">
+                <label class="config-label">Model</label>
+                <select id="modelSelect" class="config-select">
+                    <option value="">Select provider first</option>
+                </select>
+                <div class="model-badge" id="modelBadge"></div>
+            </div>
+
+            <!-- Custom Model -->
+            <div class="config-section">
+                <label class="config-label">Custom Model ID</label>
+                <input type="text" id="customModel" class="config-input" placeholder="e.g. anthropic/claude-sonnet-4-5">
+                <button class="btn btn-sm btn-secondary" id="applyCustomModel">Apply Model</button>
+            </div>
+
+            <hr class="divider">
+
+            <!-- Custom Endpoint -->
+            <div class="config-section">
+                <label class="config-label">
+                    ⚡ Custom Endpoint
+                    <span class="endpoint-status" id="endpointStatus"></span>
+                </label>
+                <select id="endpointPreset" class="config-select" style="margin-bottom:6px">
+                    <option value="">— Select Preset —</option>
+                    <option value="genplus_gemini">GenPlus Gemini API</option>
+                    <option value="pollinations">Pollinations AI</option>
+                    <option value="custom">Manual Input</option>
+                </select>
+                <input type="text" id="endpointUrl" class="config-input" placeholder="API Base URL">
+                <select id="endpointModelSelect" class="config-select" style="margin-top:6px;display:none">
+                </select>
+                <input type="text" id="endpointModel" class="config-input" placeholder="Model name"
+                    style="margin-top:6px">
+                <input type="text" id="endpointKey" class="config-input" placeholder="API Key (Bearer token)"
+                    style="margin-top:6px">
+                <div class="session-actions" style="margin-top:8px">
+                    <button class="btn btn-sm btn-primary" id="applyEndpoint">Connect</button>
+                    <button class="btn btn-sm btn-danger" id="clearEndpoint">Disconnect</button>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- Parameters -->
+            <div class="config-section">
+                <label class="config-label">
+                    Temperature
+                    <span class="param-value" id="tempValue">0.7</span>
+                </label>
+                <input type="range" id="temperature" class="config-range" min="0" max="2" step="0.1" value="0.7">
+            </div>
+
+            <div class="config-section">
+                <label class="config-label">
+                    Max Tokens
+                    <span class="param-value" id="maxTokensValue">8192</span>
+                </label>
+                <input type="range" id="maxTokens" class="config-range" min="256" max="32768" step="256" value="8192">
+            </div>
+
+            <hr class="divider">
+
+            <!-- Sessions -->
+            <div class="config-section">
+                <label class="config-label">Session</label>
+                <div class="session-actions">
+                    <button class="btn btn-sm btn-primary" id="newSession">
+                        <span>+</span> New Chat
+                    </button>
+                    <button class="btn btn-sm btn-danger" id="clearSession">
+                        <span>🗑</span> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Ready</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main chat area -->
+    <main class="main">
+        <!-- Header -->
+        <header class="header">
+            <button class="hamburger" id="hamburger" aria-label="Open sidebar">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="header-info">
+                <h1 class="header-title">Playground</h1>
+                <span class="header-model" id="headerModel">Loading...</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-icon" id="themeToggle" title="Toggle theme">
+                    <span id="themeIcon">🌙</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Messages -->
+        <div class="messages" id="messages">
+            <div class="welcome" id="welcome">
+                <div class="welcome-icon">🐈</div>
+                <h2>Welcome to nanobot Playground</h2>
+                <p>Select a model and start chatting. You can switch models anytime.</p>
+                <div class="quick-prompts">
+                    <button class="quick-prompt" data-prompt="Hello! What can you do?">👋 Say Hello</button>
+                    <button class="quick-prompt" data-prompt="Write a Python function to sort a list using quicksort">💻
+                        Write Code</button>
+                    <button class="quick-prompt" data-prompt="Explain quantum computing in simple terms">🧠 Explain a
+                        Topic</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input area -->
+        <div class="input-area">
+            <div class="input-wrapper">
+                <textarea id="messageInput" placeholder="Type a message..." rows="1" autofocus></textarea>
+                <button class="send-btn" id="sendBtn" title="Send message">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 2L11 13" />
+                        <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+                    </svg>
+                </button>
+            </div>
+            <div class="input-footer">
+                <span class="input-hint">Enter to send • Shift+Enter for new line</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

@@ -18,6 +18,7 @@ from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.cron import CronTool
+from nanobot.agent.tools.image_gen import GenerateImageTool
 from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
 
@@ -99,6 +100,10 @@ class AgentLoop:
         message_tool = MessageTool(send_callback=self.bus.publish_outbound)
         self.tools.register(message_tool)
         
+        # Image generation tool
+        image_tool = GenerateImageTool(send_callback=self.bus.publish_outbound)
+        self.tools.register(image_tool)
+        
         # Spawn tool (for subagents)
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
@@ -159,6 +164,14 @@ class AgentLoop:
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}: {preview}")
         
+        # Handle model switch metadata — change model without calling LLM
+        if msg.metadata and msg.metadata.get("model_switch"):
+            new_model = msg.metadata["model_switch"]
+            old_model = self.model or "default"
+            self.model = new_model
+            logger.info(f"Model switched: {old_model} → {new_model}")
+            return None  # Confirmation already sent by Telegram handler
+        
         # Get or create session
         session = self.sessions.get_or_create(msg.session_key)
         
@@ -166,6 +179,10 @@ class AgentLoop:
         message_tool = self.tools.get("message")
         if isinstance(message_tool, MessageTool):
             message_tool.set_context(msg.channel, msg.chat_id)
+        
+        image_tool = self.tools.get("generate_image")
+        if isinstance(image_tool, GenerateImageTool):
+            image_tool.set_context(msg.channel, msg.chat_id)
         
         spawn_tool = self.tools.get("spawn")
         if isinstance(spawn_tool, SpawnTool):

@@ -282,6 +282,24 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         strip_model_prefix=False,
         model_overrides=(),
     ),
+
+    # GenPlus: Custom Gemini API wrapper (non-LiteLLM, uses custom provider).
+    ProviderSpec(
+        name="genplus",
+        keywords=("genplus",),
+        env_key="GENPLUS_API_KEY",
+        display_name="GenPlus",
+        litellm_prefix="",
+        skip_prefixes=(),
+        env_extras=(),
+        is_gateway=False,
+        is_local=False,
+        detect_by_key_prefix="",
+        detect_by_base_keyword="genplusmedia",
+        default_api_base="https://tools.genplusmedia.com/api/chat/gemini.php",
+        strip_model_prefix=False,
+        model_overrides=(),
+    ),
 )
 
 

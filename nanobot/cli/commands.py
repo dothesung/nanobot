@@ -296,10 +296,61 @@ This file stores important information that should persist across sessions.
 
 
 def _make_provider(config):
-    """Create LiteLLMProvider from config. Exits if no API key found."""
+    """Create LLM provider from config. Exits if no API key found."""
+    model = config.agents.defaults.model
+    
+    # Check if using GenPlus provider
+    if model.lower().startswith("genplus/") or model.lower().startswith("genplus"):
+        from nanobot.providers.genplus_provider import GenPlusProvider
+        from nanobot.providers.direct_provider import DirectProvider
+        from nanobot.providers.resilient_provider import ResilientProvider
+        
+        p = config.providers.genplus
+        
+        # Build failover chain: GenPlus → Pollinations → Groq (if configured)
+        chain = []
+        
+        # 1. Primary: GenPlus Gemini
+        chain.append((
+            "GenPlus",
+            GenPlusProvider(
+                api_key=p.api_key if p else None,
+                api_base=p.api_base or "https://tools.genplusmedia.com/api/chat/gemini.php",
+                default_model=model,
+            ),
+        ))
+        
+        # 2. Fallback: Pollinations (free, no key needed)
+        chain.append((
+            "Pollinations",
+            DirectProvider(
+                api_key="plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF",
+                api_base="https://gen.pollinations.ai/v1",
+                default_model="gemini-fast",
+            ),
+        ))
+        
+        # 3. Fallback: Groq (if configured)
+        groq_cfg = config.providers.groq
+        if groq_cfg and groq_cfg.api_key:
+            chain.append((
+                "Groq",
+                DirectProvider(
+                    api_key=groq_cfg.api_key,
+                    api_base="https://api.groq.com/openai/v1",
+                    default_model="llama-3.3-70b-versatile",
+                ),
+            ))
+        
+        return ResilientProvider(
+            chain=chain,
+            max_failures=3,
+            cooldown_seconds=60,
+        )
+    
+    # Default: use LiteLLM provider
     from nanobot.providers.litellm_provider import LiteLLMProvider
     p = config.get_provider()
-    model = config.agents.defaults.model
     if not (p and p.api_key) and not model.startswith("bedrock/"):
         console.print("[red]Error: No API key configured.[/red]")
         console.print("Set one in ~/.nanobot/config.json under providers section")
@@ -814,6 +865,71 @@ def cron_run(
         console.print(f"[green]✓[/green] Job executed")
     else:
         console.print(f"[red]Failed to run job {job_id}[/red]")
+
+
+# ============================================================================
+# Playground Commands
+# ============================================================================
+
+
+@app.command()
+def playground(
+    port: int = typer.Option(8080, "--port", "-p", help="Playground server port"),
+    host: str = typer.Option("localhost", "--host", help="Host to bind to"),
+    no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open browser"),
+):
+    """Start the interactive web playground."""
+    from nanobot.config.loader import load_config
+    from loguru import logger
+
+    logger.disable("nanobot")
+    # Re-enable logging for channels, agent, and bus (needed for Telegram pipeline)
+    logger.enable("nanobot.channels")
+    logger.enable("nanobot.agent")
+    logger.enable("nanobot.bus")
+    logger.enable("nanobot.providers")
+
+    config = load_config()
+
+    # Check for at least one provider
+    p = config.get_provider()
+    if not p or not p.api_key:
+        console.print("[red]Error: No API key configured.[/red]")
+        console.print("Set one in ~/.nanobot/config.json under providers section")
+        raise typer.Exit(1)
+
+    console.print(f"{__logo__} Starting nanobot Playground...")
+
+    url = f"http://{host}:{port}"
+    if host == "0.0.0.0":
+        url = f"http://localhost:{port}"
+
+    console.print(f"[green]✓[/green] Playground: [link={url}]{url}[/link]")
+
+    # Show enabled channels
+    channels_info = []
+    if config.channels.telegram.enabled and config.channels.telegram.token:
+        channels_info.append("Telegram")
+    if channels_info:
+        console.print(f"[green]✓[/green] Channels: {', '.join(channels_info)}")
+
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    # Auto-open browser
+    if not no_open:
+        import webbrowser
+        import threading
+        threading.Timer(1.0, webbrowser.open, args=[url]).start()
+
+    # Start server
+    from nanobot.playground.server import PlaygroundServer
+
+    server = PlaygroundServer(config=config, host=host, port=port)
+
+    try:
+        asyncio.run(server.start())
+    except KeyboardInterrupt:
+        console.print("\nPlayground stopped.")
 
 
 # ============================================================================
