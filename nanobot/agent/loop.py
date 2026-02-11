@@ -176,6 +176,18 @@ class AgentLoop:
             logger.info(f"Model switched: {old_model} → {new_model}")
             return None  # Confirmation already sent by Telegram handler
         
+        # Load user profile if available
+        user_profile = None
+        if msg.metadata and msg.metadata.get("user_role") is not None:
+            from nanobot.users.models import UserProfile, PermissionLevel
+            uid = msg.metadata.get("user_chat_id", msg.chat_id)
+            try:
+                from nanobot.users.manager import UserManager
+                um = UserManager()
+                user_profile = um.get(uid)
+            except Exception as e:
+                logger.debug(f"Could not load user profile: {e}")
+        
         # Get or create session
         session = self.sessions.get_or_create(msg.session_key)
         
@@ -196,6 +208,13 @@ class AgentLoop:
         if isinstance(cron_tool, CronTool):
             cron_tool.set_context(msg.channel, msg.chat_id)
         
+        # Determine allowed tools based on user role
+        tool_defs = self.tools.get_definitions()
+        if user_profile:
+            allowed = user_profile.allowed_tools()
+            if allowed is not None:  # None = unrestricted (Admin)
+                tool_defs = [t for t in tool_defs if t["function"]["name"] in allowed]
+        
         # Build initial messages (use get_history for LLM-formatted messages)
         messages = self.context.build_messages(
             history=session.get_history(),
@@ -203,6 +222,7 @@ class AgentLoop:
             media=msg.media if msg.media else None,
             channel=msg.channel,
             chat_id=msg.chat_id,
+            user_profile=user_profile,
         )
         
         # Agent loop
@@ -215,7 +235,7 @@ class AgentLoop:
             # Call LLM
             response = await self.provider.chat(
                 messages=messages,
-                tools=self.tools.get_definitions(),
+                tools=tool_defs if tool_defs else None,
                 model=self.model
             )
             

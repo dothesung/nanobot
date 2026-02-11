@@ -1,12 +1,17 @@
 """Base channel interface for chat platforms."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from loguru import logger
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
+
+if TYPE_CHECKING:
+    from nanobot.users.manager import UserManager
 
 
 class BaseChannel(ABC):
@@ -19,16 +24,18 @@ class BaseChannel(ABC):
     
     name: str = "base"
     
-    def __init__(self, config: Any, bus: MessageBus):
+    def __init__(self, config: Any, bus: MessageBus, user_manager: UserManager | None = None):
         """
         Initialize the channel.
         
         Args:
             config: Channel-specific configuration.
             bus: The message bus for communication.
+            user_manager: Optional user manager for permission checks.
         """
         self.config = config
         self.bus = bus
+        self.user_manager = user_manager
         self._running = False
     
     @abstractmethod
@@ -94,7 +101,8 @@ class BaseChannel(ABC):
         """
         Handle an incoming message from the chat platform.
         
-        This method checks permissions and forwards to the bus.
+        This method checks permissions, resolves user profile,
+        and forwards to the bus with role metadata.
         
         Args:
             sender_id: The sender's identifier.
@@ -110,13 +118,32 @@ class BaseChannel(ABC):
             )
             return
         
+        meta = metadata or {}
+
+        # Resolve user profile and inject role
+        if self.user_manager:
+            # Extract numeric ID (sender_id may be "123|username")
+            uid = sender_id.split("|")[0] if "|" in sender_id else sender_id
+            user_name = meta.get("first_name", "")
+            profile = self.user_manager.get_or_create(uid, name=user_name)
+
+            # Rate limit check
+            if not profile.check_rate_limit():
+                logger.warning(f"Rate limited: {uid} ({profile.role.name})")
+                return
+
+            profile.record_usage()
+            self.user_manager.save(profile)
+            meta["user_role"] = int(profile.role)
+            meta["user_chat_id"] = uid
+        
         msg = InboundMessage(
             channel=self.name,
             sender_id=str(sender_id),
             chat_id=str(chat_id),
             content=content,
             media=media or [],
-            metadata=metadata or {}
+            metadata=meta,
         )
         
         await self.bus.publish_inbound(msg)

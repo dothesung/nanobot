@@ -14,6 +14,7 @@ from nanobot.config.schema import Config
 
 if TYPE_CHECKING:
     from nanobot.session.manager import SessionManager
+    from nanobot.users.manager import UserManager
 
 
 class ChannelManager:
@@ -26,10 +27,11 @@ class ChannelManager:
     - Route outbound messages
     """
     
-    def __init__(self, config: Config, bus: MessageBus, session_manager: "SessionManager | None" = None):
+    def __init__(self, config: Config, bus: MessageBus, session_manager: "SessionManager | None" = None, user_manager: "UserManager | None" = None):
         self.config = config
         self.bus = bus
         self.session_manager = session_manager
+        self.user_manager = user_manager
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
         
@@ -47,6 +49,7 @@ class ChannelManager:
                     self.bus,
                     groq_api_key=self.config.providers.groq.api_key,
                     session_manager=self.session_manager,
+                    user_manager=self.user_manager,
                 )
                 logger.info("Telegram channel enabled")
             except ImportError as e:

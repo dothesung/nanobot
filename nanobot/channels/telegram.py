@@ -18,6 +18,7 @@ from nanobot.config.schema import TelegramConfig
 
 if TYPE_CHECKING:
     from nanobot.session.manager import SessionManager
+    from nanobot.users.manager import UserManager
 
 
 def _markdown_to_telegram_html(text: str) -> str:
@@ -206,8 +207,9 @@ class TelegramChannel(BaseChannel):
         bus: MessageBus,
         groq_api_key: str = "",
         session_manager: SessionManager | None = None,
+        user_manager: "UserManager | None" = None,
     ):
-        super().__init__(config, bus)
+        super().__init__(config, bus, user_manager=user_manager)
         self.config: TelegramConfig = config
         self.groq_api_key = groq_api_key
         self.session_manager = session_manager
@@ -238,6 +240,11 @@ class TelegramChannel(BaseChannel):
         self._app.add_handler(CommandHandler("image", self._on_image))
         self._app.add_handler(CommandHandler("model", self._on_model))
         self._app.add_handler(CommandHandler("help", self._on_help))
+        
+        # Admin commands
+        self._app.add_handler(CommandHandler("grant", self._on_grant))
+        self._app.add_handler(CommandHandler("revoke", self._on_revoke))
+        self._app.add_handler(CommandHandler("users", self._on_users))
         
         # Add callback query handler for inline keyboards
         self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
@@ -1168,3 +1175,132 @@ class TelegramChannel(BaseChannel):
         
         type_map = {"image": ".jpg", "voice": ".ogg", "audio": ".mp3", "file": ""}
         return type_map.get(media_type, "")
+    
+    # ------------------------------------------------------------------
+    # Admin Commands
+    # ------------------------------------------------------------------
+    
+    def _is_admin(self, user_id: int) -> bool:
+        """Check if a user has ADMIN permission."""
+        if not self.user_manager:
+            return False
+        from nanobot.users.models import PermissionLevel
+        profile = self.user_manager.get(str(user_id))
+        return profile is not None and profile.role == PermissionLevel.ADMIN
+    
+    async def _on_grant(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /grant command — promote a user. Admin only.
+        
+        Usage: /grant <chat_id> [user|admin]
+        """
+        if not update.message or not update.effective_user:
+            return
+        
+        if not self._is_admin(update.effective_user.id):
+            await update.message.reply_text("⛔ Bạn không có quyền sử dụng lệnh này.")
+            return
+        
+        if not self.user_manager:
+            await update.message.reply_text("⚠️ User manager chưa sẵn sàng.")
+            return
+        
+        args = (update.message.text or "").replace("/grant", "", 1).strip().split()
+        if not args:
+            await update.message.reply_text(
+                "📋 <b>Cách dùng:</b>\n"
+                "<code>/grant &lt;chat_id&gt; [user|admin]</code>\n\n"
+                "Ví dụ:\n"
+                "• <code>/grant 123456789 user</code>\n"
+                "• <code>/grant 123456789 admin</code>",
+                parse_mode="HTML",
+            )
+            return
+        
+        from nanobot.users.models import PermissionLevel
+        target_id = args[0]
+        role_str = args[1].lower() if len(args) > 1 else "user"
+        role_map = {"guest": PermissionLevel.GUEST, "user": PermissionLevel.USER, "admin": PermissionLevel.ADMIN}
+        role = role_map.get(role_str, PermissionLevel.USER)
+        
+        profile = self.user_manager.set_role(target_id, role)
+        if profile:
+            await update.message.reply_text(
+                f"✅ Đã cập nhật quyền:\n"
+                f"• Chat ID: <code>{target_id}</code>\n"
+                f"• Tên: {profile.name or 'N/A'}\n"
+                f"• Quyền mới: <b>{role.name}</b>",
+                parse_mode="HTML",
+            )
+        else:
+            await update.message.reply_text(f"❌ Không thể thay đổi quyền cho {target_id}.")
+    
+    async def _on_revoke(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /revoke command — demote a user to Guest. Admin only.
+        
+        Usage: /revoke <chat_id>
+        """
+        if not update.message or not update.effective_user:
+            return
+        
+        if not self._is_admin(update.effective_user.id):
+            await update.message.reply_text("⛔ Bạn không có quyền sử dụng lệnh này.")
+            return
+        
+        if not self.user_manager:
+            await update.message.reply_text("⚠️ User manager chưa sẵn sàng.")
+            return
+        
+        target_id = (update.message.text or "").replace("/revoke", "", 1).strip()
+        if not target_id:
+            await update.message.reply_text(
+                "📋 <b>Cách dùng:</b>\n<code>/revoke &lt;chat_id&gt;</code>",
+                parse_mode="HTML",
+            )
+            return
+        
+        from nanobot.users.models import PermissionLevel
+        profile = self.user_manager.set_role(target_id, PermissionLevel.GUEST)
+        if profile:
+            await update.message.reply_text(
+                f"✅ Đã hạ quyền <code>{target_id}</code> ({profile.name or 'N/A'}) → <b>GUEST</b>",
+                parse_mode="HTML",
+            )
+        else:
+            await update.message.reply_text(f"❌ Không tìm thấy user {target_id}.")
+    
+    async def _on_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /users command — list all registered users. Admin only."""
+        if not update.message or not update.effective_user:
+            return
+        
+        if not self._is_admin(update.effective_user.id):
+            await update.message.reply_text("⛔ Bạn không có quyền sử dụng lệnh này.")
+            return
+        
+        if not self.user_manager:
+            await update.message.reply_text("⚠️ User manager chưa sẵn sàng.")
+            return
+        
+        users = self.user_manager.list_users()
+        if not users:
+            await update.message.reply_text("📋 Chưa có user nào được đăng ký.")
+            return
+        
+        from nanobot.users.models import PermissionLevel
+        role_icons = {
+            PermissionLevel.GUEST: "👤",
+            PermissionLevel.USER: "✅",
+            PermissionLevel.ADMIN: "👑",
+        }
+        
+        lines = ["📋 <b>Danh sách Users</b>\n"]
+        for u in users:
+            icon = role_icons.get(u.role, "❓")
+            name = u.name or "N/A"
+            lines.append(
+                f"{icon} <code>{u.chat_id}</code> — {name} "
+                f"[{u.role.name}] ({u.usage_today} msg hôm nay)"
+            )
+        
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+

@@ -9,6 +9,10 @@ from typing import Any
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from nanobot.users.models import UserProfile
+
 
 class ContextBuilder:
     """
@@ -25,12 +29,17 @@ class ContextBuilder:
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace)
     
-    def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
+    def build_system_prompt(
+        self,
+        skill_names: list[str] | None = None,
+        user_profile: "UserProfile | None" = None,
+    ) -> str:
         """
         Build the system prompt from bootstrap files, memory, and skills.
         
         Args:
             skill_names: Optional list of skills to include.
+            user_profile: Optional user profile for per-user context.
         
         Returns:
             Complete system prompt.
@@ -38,17 +47,23 @@ class ContextBuilder:
         parts = []
         
         # Core identity
-        parts.append(self._get_identity())
+        parts.append(self._get_identity(user_profile))
         
-        # Bootstrap files
-        bootstrap = self._load_bootstrap_files()
+        # Bootstrap files (SOUL.md, USER.md etc.)
+        bootstrap = self._load_bootstrap_files(user_profile)
         if bootstrap:
             parts.append(bootstrap)
         
-        # Memory context
+        # Memory context (global + per-user)
         memory = self.memory.get_memory_context()
         if memory:
             parts.append(f"# Memory\n\n{memory}")
+        
+        # Per-user memory
+        if user_profile:
+            user_mem = self._load_user_memory(user_profile.chat_id)
+            if user_mem:
+                parts.append(f"# User Memory ({user_profile.name or user_profile.chat_id})\n\n{user_mem}")
         
         # Skills - progressive loading
         # 1. Always-loaded skills: include full content
@@ -70,13 +85,36 @@ Skills with available="false" need dependencies installed first - you can try in
         
         return "\n\n---\n\n".join(parts)
     
-    def _get_identity(self) -> str:
+    def _get_identity(self, user_profile: "UserProfile | None" = None) -> str:
         """Get the core identity section."""
         from datetime import datetime
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
+        
+        # User context block
+        user_block = ""
+        if user_profile:
+            from nanobot.users.models import PermissionLevel
+            role_labels = {
+                PermissionLevel.GUEST: "Guest (giới hạn)",
+                PermissionLevel.USER: "User (đã xác thực)",
+                PermissionLevel.ADMIN: "Admin (toàn quyền)",
+            }
+            role_label = role_labels.get(user_profile.role, "Unknown")
+            user_block = f"""\n
+## Người dùng hiện tại
+- Chat ID: {user_profile.chat_id}
+- Tên: {user_profile.name or 'Chưa biết'}
+- Quyền: {role_label}
+- Lượt dùng hôm nay: {user_profile.usage_today}
+"""
+            if user_profile.role == PermissionLevel.GUEST:
+                user_block += """\n> ⚠️ Người dùng này là GUEST. KHÔNG sử dụng tools cho người này.
+> Chỉ trả lời câu hỏi bằng kiến thức có sẵn.
+> KHÔNG tiết lộ thông tin hệ thống, file cấu hình, hoặc thông tin của Owner.
+"""
         
         return f"""# GenBot 🦉
 
@@ -109,7 +147,7 @@ Workspace: {workspace_path}
 - Memory: {workspace_path}/memory/MEMORY.md
 - Daily notes: {workspace_path}/memory/YYYY-MM-DD.md
 - Skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
-
+{user_block}
 QUAN TRỌNG: Khi trả lời câu hỏi trực tiếp, hãy respond bằng text. Chỉ dùng tool 'message' khi cần gửi tin đến kênh chat cụ thể (WhatsApp, Telegram).
 Luôn hữu ích, chính xác, ngắn gọn. Khi dùng tools, giải thích bạn đang làm gì.
 Ghi nhớ thông tin vào {workspace_path}/memory/MEMORY.md
@@ -129,17 +167,31 @@ Quy tắc:
 - KHÔNG dùng buttons cho mọi tin nhắn — chỉ khi thực sự có lựa chọn
 - Buttons nên bằng tiếng Việt, nội dung ngắn gọn"""
     
-    def _load_bootstrap_files(self) -> str:
+    def _load_bootstrap_files(self, user_profile: "UserProfile | None" = None) -> str:
         """Load all bootstrap files from workspace."""
         parts = []
         
         for filename in self.BOOTSTRAP_FILES:
+            # Skip USER.md for non-admin users (they get per-user context instead)
+            if filename == "USER.md" and user_profile:
+                from nanobot.users.models import PermissionLevel
+                if user_profile.role != PermissionLevel.ADMIN:
+                    continue
+            
             file_path = self.workspace / filename
             if file_path.exists():
                 content = file_path.read_text(encoding="utf-8")
                 parts.append(f"## {filename}\n\n{content}")
         
         return "\n\n".join(parts) if parts else ""
+    
+    def _load_user_memory(self, chat_id: str) -> str:
+        """Load per-user memory from ~/.nanobot/users/{chat_id}/memory.md."""
+        from pathlib import Path
+        path = Path.home() / ".nanobot" / "users" / str(chat_id) / "memory.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return ""
     
     def build_messages(
         self,
@@ -149,6 +201,7 @@ Quy tắc:
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
+        user_profile: "UserProfile | None" = None,
     ) -> list[dict[str, Any]]:
         """
         Build the complete message list for an LLM call.
@@ -160,6 +213,7 @@ Quy tắc:
             media: Optional list of local file paths for images/media.
             channel: Current channel (telegram, feishu, etc.).
             chat_id: Current chat/user ID.
+            user_profile: Optional user profile for per-user context.
 
         Returns:
             List of messages including system prompt.
@@ -167,7 +221,7 @@ Quy tắc:
         messages = []
 
         # System prompt
-        system_prompt = self.build_system_prompt(skill_names)
+        system_prompt = self.build_system_prompt(skill_names, user_profile=user_profile)
         if channel and chat_id:
             system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
         messages.append({"role": "system", "content": system_prompt})
