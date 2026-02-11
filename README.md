@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="nanobot_logo.png" alt="GenBot" width="500">
   <h1>GenBot 🦉: Your Agentic AI Assistant</h1>
   <p>
     <img src="https://img.shields.io/badge/python-≥3.11-blue" alt="Python">
