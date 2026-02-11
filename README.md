@@ -615,7 +615,38 @@ nanobot cron remove <job_id>
 
 </details>
 
-## 🐳 Docker
+## � Multi-User & Permissions
+
+nanobot supports a 3-level permission system out of the box:
+
+- **Guest** (Default): Basic chat only. Rate limited (20/day). No tool access.
+- **User**: Verified user. Higher rate limit (200/day). Access to safe tools (Search, Image Gen, etc.).
+- **Admin**: Full access. Unlimited usage. Can manage other users.
+
+### User Management Commands (Admin only)
+Only the Admin (Owner) can use these commands in Telegram:
+
+- `/grant <chat_id> [user|admin]` — Upgrade a user's permission
+- `/revoke <chat_id>` — Downgrade a user to Guest
+- `/users` — List all registered users
+
+### Configuration
+
+User data is stored in `~/.nanobot/users/`. To set the initial Owner/Admin:
+
+1. Chat with your bot to trigger auto-registration (as Guest).
+2. Edit `~/.nanobot/users/_config.json`:
+   ```json
+   {
+     "owner_chat_ids": ["YOUR_TELEGRAM_CHAT_ID"],
+     "default_role": "guest",
+     "guest_daily_limit": 20,
+     "auto_create_guest": true
+   }
+   ```
+3. Restart the bot. You are now Admin!
+
+## �🐳 Docker
 
 > [!TIP]
 > The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config directory into the container, so your config and workspace persist across container restarts.
