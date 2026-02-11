@@ -13,3 +13,20 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  playground:
+    build: .
+    restart: always
+    volumes:
+      - ~/.nanobot:/root/.nanobot
+    ports:
+      - "8081:8081"
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - NANOBOT_CHANNELS__TELEGRAM__ENABLED=false
+    command: [ "playground", "--host", "0.0.0.0", "--port", "8081", "--no-open" ]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

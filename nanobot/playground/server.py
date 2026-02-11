@@ -424,16 +424,23 @@ class PlaygroundServer:
 
     async def start(self):
         """Start the playground server + enabled channels (Telegram, etc.)."""
+        import os
+        skip_channels = os.environ.get("NANOBOT_CHANNELS__TELEGRAM__ENABLED", "").lower() == "false"
+
         self._make_agent()
 
-        # Start channels (Telegram, etc.) alongside web server
-        from nanobot.channels.manager import ChannelManager
-        self._channel_manager = ChannelManager(
-            self.config, self._bus, session_manager=self._session_manager
-        )
-        enabled = self._channel_manager.enabled_channels
-        if enabled:
-            logger.info(f"Channels enabled: {', '.join(enabled)}")
+        enabled = []
+        if not skip_channels:
+            # Start channels (Telegram, etc.) alongside web server
+            from nanobot.channels.manager import ChannelManager
+            self._channel_manager = ChannelManager(
+                self.config, self._bus, session_manager=self._session_manager
+            )
+            enabled = self._channel_manager.enabled_channels
+            if enabled:
+                logger.info(f"Channels enabled: {', '.join(enabled)}")
+        else:
+            logger.info("Channels skipped (standalone playground mode)")
 
         server = await asyncio.start_server(
             self._handle_request, self.host, self.port
@@ -448,7 +455,6 @@ class PlaygroundServer:
         async with server:
             if enabled:
                 # Run web server + agent loop + channels concurrently
-                # Agent loop consumes inbound messages from bus (Telegram, etc.)
                 await asyncio.gather(
                     server.serve_forever(),
                     self._agent.run(),
