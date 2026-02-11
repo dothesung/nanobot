@@ -8,13 +8,13 @@ from nanobot.providers.base import LLMProvider, LLMResponse
 
 
 # Default system prompt for nanobot identity
-DEFAULT_SYSTEM_PROMPT = """Bạn là nanobot 🐈 - trợ lý AI cá nhân siêu nhẹ được phát triển bởi GenPlus Media.
+DEFAULT_SYSTEM_PROMPT = """Bạn là GenBot 🦉 - trợ lý AI cá nhân siêu nhẹ được phát triển bởi GenPlus Media.
 
 ## QUY TẮC BẮT BUỘC:
 
 1. **LUÔN trả lời bằng Tiếng Việt** - đây là ngôn ngữ mặc định. Chỉ trả lời ngôn ngữ khác khi người dùng yêu cầu dịch rõ ràng.
 
-2. **Danh tính**: Bạn là nanobot, KHÔNG phải Gemini, ChatGPT, Claude hay AI nào khác. Khi được hỏi "Bạn là ai?", trả lời: "Mình là nanobot 🐈, trợ lý AI cá nhân của GenPlus Media!"
+2. **Danh tính**: Bạn là GenBot, KHÔNG phải Gemini, ChatGPT, Claude hay AI nào khác. Khi được hỏi "Bạn là ai?", trả lời: "Mình là GenBot 🦉, trợ lý AI cá nhân của GenPlus Media!"
 
 3. **Xưng hô**: Xưng "em", gọi người dùng là "Sếp"
 
@@ -44,7 +44,7 @@ class GenPlusProvider(LLMProvider):
         self,
         api_key: str | None = None,
         api_base: str | None = None,
-        default_model: str = "genplus/gemini",
+        default_model: str = "genplus/gemini-3.0-flash",
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
@@ -116,9 +116,13 @@ class GenPlusProvider(LLMProvider):
         # --- Try GenPlus API first ---
         try:
             async with aiohttp.ClientSession() as session:
+                # Determine model name for API (strip genplus/ prefix)
+                api_model = (model or self.default_model).replace("genplus/", "")
+                
                 payload = {
                     "prompt": user_prompt,
-                    "sys_prompt": sys_prompt
+                    "sys_prompt": sys_prompt,
+                    "model": api_model,
                 }
                 
                 async with session.post(

@@ -19,7 +19,7 @@ from nanobot import __version__, __logo__
 
 app = typer.Typer(
     name="nanobot",
-    help=f"{__logo__} nanobot - Personal AI Assistant",
+    help=f"{__logo__} GenBot - Personal AI Assistant",
     no_args_is_help=True,
 )
 
@@ -144,7 +144,7 @@ def _print_agent_response(response: str, render_markdown: bool) -> None:
     console.print(
         Panel(
             body,
-            title=f"{__logo__} nanobot",
+            title=f"{__logo__} GenBot",
             title_align="left",
             border_style="cyan",
             padding=(0, 1),
@@ -168,7 +168,7 @@ async def _read_interactive_input_async() -> str:
 
 def version_callback(value: bool):
     if value:
-        console.print(f"{__logo__} nanobot v{__version__}")
+        console.print(f"{__logo__} GenBot v{__version__}")
         raise typer.Exit()
 
 
@@ -178,7 +178,7 @@ def main(
         None, "--version", "-v", callback=version_callback, is_eager=True
     ),
 ):
-    """nanobot - Personal AI Assistant."""
+    """GenBot - Personal AI Assistant."""
     pass
 
 
@@ -213,11 +213,11 @@ def onboard():
     # Create default bootstrap files
     _create_workspace_templates(workspace)
     
-    console.print(f"\n{__logo__} nanobot is ready!")
+    console.print(f"\n{__logo__} GenBot is ready!")
     console.print("\nNext steps:")
     console.print("  1. Add your API key to [cyan]~/.nanobot/config.json[/cyan]")
     console.print("     Get one at: https://openrouter.ai/keys")
-    console.print("  2. Chat: [cyan]nanobot agent -m \"Hello!\"[/cyan]")
+    console.print("  2. Chat: [cyan]GenBot agent -m \"Hello!\"[/cyan]")
     console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/nanobot#-chat-apps[/dim]")
 
 
@@ -239,7 +239,7 @@ You are a helpful AI assistant. Be concise, accurate, and friendly.
 """,
         "SOUL.md": """# Soul
 
-I am nanobot, a lightweight AI assistant.
+I am GenBot, a lightweight AI assistant.
 
 ## Personality
 
@@ -388,7 +388,7 @@ def gateway(
         import logging
         logging.basicConfig(level=logging.DEBUG)
     
-    console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
+    console.print(f"{__logo__} Starting GenBot gateway on port {port}...")
     
     config = load_config()
     bus = MessageBus()
@@ -488,7 +488,7 @@ def agent(
     message: str = typer.Option(None, "--message", "-m", help="Message to send to the agent"),
     session_id: str = typer.Option("cli:default", "--session", "-s", help="Session ID"),
     markdown: bool = typer.Option(True, "--markdown/--no-markdown", help="Render assistant output as Markdown"),
-    logs: bool = typer.Option(False, "--logs/--no-logs", help="Show nanobot runtime logs during chat"),
+    logs: bool = typer.Option(False, "--logs/--no-logs", help="Show GenBot runtime logs during chat"),
 ):
     """Interact with the agent directly."""
     from nanobot.config.loader import load_config
@@ -520,7 +520,7 @@ def agent(
         if logs:
             from contextlib import nullcontext
             return nullcontext()
-        return console.status("[dim]nanobot is thinking...[/dim]", spinner="dots")
+        return console.status("[dim]GenBot is thinking...[/dim]", spinner="dots")
 
     if message:
         # Single message mode
@@ -898,7 +898,7 @@ def playground(
         console.print("Set one in ~/.nanobot/config.json under providers section")
         raise typer.Exit(1)
 
-    console.print(f"{__logo__} Starting nanobot Playground...")
+    console.print(f"{__logo__} Starting GenBot Playground...")
 
     url = f"http://{host}:{port}"
     if host == "0.0.0.0":

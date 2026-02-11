@@ -412,8 +412,8 @@ function appendMessage(role, content) {
     const wrapper = document.createElement('div');
     wrapper.className = `message ${role}`;
 
-    const avatar = role === 'user' ? '👤' : '🐈';
-    const label = role === 'user' ? 'You' : 'nanobot';
+    const avatar = role === 'user' ? '👤' : '🦉';
+    const label = role === 'user' ? 'You' : 'GenBot';
 
     let rendered = content;
     if (role === 'assistant') {
@@ -452,9 +452,9 @@ function appendThinking() {
     el.className = 'message assistant';
     el.id = 'thinking-msg';
     el.innerHTML = `
-        <div class="message-avatar">🐈</div>
+        <div class="message-avatar">🦉</div>
         <div class="message-body">
-            <div class="message-role">nanobot</div>
+            <div class="message-role">GenBot</div>
             <div class="thinking-dots">
                 <span></span><span></span><span></span>
             </div>
@@ -528,7 +528,7 @@ function newSession() {
     welcome.className = 'welcome';
     welcome.id = 'welcome';
     welcome.innerHTML = `
-        <div class="welcome-icon">🐈</div>
+        <div class="welcome-icon">🦉</div>
         <h2>New Conversation</h2>
         <p>Start chatting with a fresh context.</p>
     `;

@@ -19,6 +19,7 @@ from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.image_gen import GenerateImageTool
+from nanobot.agent.tools.crawler import Crawl4AITool
 from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
 
@@ -103,6 +104,9 @@ class AgentLoop:
         # Image generation tool
         image_tool = GenerateImageTool(send_callback=self.bus.publish_outbound)
         self.tools.register(image_tool)
+        
+        # Crawl4AI tool
+        self.tools.register(Crawl4AITool())
         
         # Spawn tool (for subagents)
         spawn_tool = SpawnTool(manager=self.subagents)

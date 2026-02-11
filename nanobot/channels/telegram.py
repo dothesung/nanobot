@@ -89,19 +89,19 @@ SPECIALIZED_MODELS = {
         'url': 'https://gen.pollinations.ai/v1/chat/completions',
         'key': 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF',
         'model': 'perplexity-fast',
-        'system': 'Bạn là nanobot 🐈 - trợ lý tìm kiếm thông minh. Luôn trả lời bằng tiếng Việt. Tìm kiếm thông tin mới nhất và trả lời ngắn gọn, rõ ràng, có nguồn trích dẫn nếu có. Dùng emoji phù hợp.',
+        'system': 'Bạn là GenBot 🦉 - trợ lý tìm kiếm thông minh. Luôn trả lời bằng tiếng Việt. Tìm kiếm thông tin mới nhất và trả lời ngắn gọn, rõ ràng, có nguồn trích dẫn nếu có. Dùng emoji phù hợp.',
     },
     'vision': {
         'url': 'https://gen.pollinations.ai/v1/chat/completions',
         'key': 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF',
         'model': 'gemini-fast',
-        'system': 'Bạn là nanobot 🐈 - trợ lý vision thông minh. Luôn trả lời bằng tiếng Việt. Phân tích ảnh chi tiết, mô tả nội dung, nhận diện vật thể, đọc text trong ảnh. Dùng emoji phù hợp.',
+        'system': 'Bạn là GenBot 🦉 - trợ lý vision thông minh. Luôn trả lời bằng tiếng Việt. Phân tích ảnh chi tiết, mô tả nội dung, nhận diện vật thể, đọc text trong ảnh. Dùng emoji phù hợp.',
     },
     'code': {
         'url': 'https://gen.pollinations.ai/v1/chat/completions',
         'key': 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF',
         'model': 'qwen-coder',
-        'system': 'Bạn là nanobot 🐈 - trợ lý lập trình chuyên nghiệp. Luôn trả lời bằng tiếng Việt (giải thích) nhưng code viết bằng ngôn ngữ phù hợp. Viết code sạch, có comment, có giải thích. Dùng markdown code blocks.',
+        'system': 'Bạn là GenBot 🦉 - trợ lý lập trình chuyên nghiệp. Luôn trả lời bằng tiếng Việt (giải thích) nhưng code viết bằng ngôn ngữ phù hợp. Viết code sạch, có comment, có giải thích. Dùng markdown code blocks.',
     },
 }
 
@@ -324,7 +324,7 @@ class TelegramChannel(BaseChannel):
                         from io import BytesIO
                         image_bytes = base64.b64decode(b64)
                         photo_io = BytesIO(image_bytes)
-                        photo_io.name = f"nanobot_image_{i+1}.jpg"
+                        photo_io.name = f"genbot_image_{i+1}.jpg"
                         
                         caption = msg.content if i == 0 else None
                         await self._app.bot.send_photo(
@@ -391,7 +391,7 @@ class TelegramChannel(BaseChannel):
         
         user = update.effective_user
         await update.message.reply_text(
-            f"👋 Chào {user.first_name}! Mình là nanobot 🐈\n\n"
+            f"👋 Chào {user.first_name}! Mình là GenBot 🦉\n\n"
             "Gửi tin nhắn để trò chuyện nhé!\n"
             "Gõ /help để xem danh sách lệnh."
         )
@@ -423,7 +423,7 @@ class TelegramChannel(BaseChannel):
             return
         
         help_text = (
-            "🐈 <b>nanobot — Danh sách lệnh</b>\n\n"
+            "🦉 <b>GenBot — Danh sách lệnh</b>\n\n"
             "💬 <b>Cơ bản</b>\n"
             "/start — Bắt đầu trò chuyện\n"
             "/reset — Xóa lịch sử hội thoại\n"
@@ -725,11 +725,13 @@ class TelegramChannel(BaseChannel):
         if not model_id:
             # Show interactive model selection menu
             keyboard = [
-                # GenPlus (primary)
-                [InlineKeyboardButton("⭐ GenPlus Gemini", callback_data="model:genplus")],
+                # GenPlus Primary
+                [InlineKeyboardButton("⭐ GenPlus (mặc định)", callback_data="model:genplus/gemini-3.0-flash")],
                 # GenPlus Custom Endpoint models
-                [InlineKeyboardButton("🔷 Gemini 2.5 Pro", callback_data="model:gemini-2.5-pro"),
-                 InlineKeyboardButton("🔷 Gemini 3 Pro", callback_data="model:gemini-3.0-pro")],
+                [InlineKeyboardButton("🔷 Gemini 3.0 Flash", callback_data="model:genplus/gemini-3.0-flash"),
+                 InlineKeyboardButton("🔷 Gemini 2.5 Flash", callback_data="model:genplus/gemini-2.5-flash")],
+                [InlineKeyboardButton("🔷 Gemini 2.5 Pro", callback_data="model:genplus/gemini-2.5-pro"),
+                 InlineKeyboardButton("🔷 Gemini 3 Pro", callback_data="model:genplus/gemini-3.0-pro")],
                 # Pollinations free models
                 [InlineKeyboardButton("⚡ Gemini Flash", callback_data="model:gemini-fast"),
                  InlineKeyboardButton("⚡ GPT-5 Nano", callback_data="model:openai-fast")],
@@ -814,7 +816,7 @@ class TelegramChannel(BaseChannel):
                         continue
                     image_bytes = base64.b64decode(encoded)
                     photo_io = BytesIO(image_bytes)
-                    photo_io.name = f"nanobot_image_{images_sent + 1}.jpg"
+                    photo_io.name = f"genbot_image_{images_sent + 1}.jpg"
                     caption = f"🎨 <b>{prompt[:200]}</b>" if images_sent == 0 else None
                     try:
                         await reply_target.reply_photo(

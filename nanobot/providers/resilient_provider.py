@@ -127,11 +127,23 @@ class ResilientProvider(LLMProvider):
 
             attempted += 1
 
+            # Determine model for this provider:
+            # If model contains a provider prefix (e.g. "genplus/gemini"),
+            # only use it for the matching provider; others use their default.
+            effective_model = model
+            if model and "/" in model:
+                model_prefix = model.split("/")[0].lower()
+                if model_prefix not in name.lower():
+                    effective_model = None  # Use provider's default model
+                    logger.debug(
+                        f"🔄 Model '{model}' not compatible with {name}, using default"
+                    )
+
             try:
                 response = await provider.chat(
                     messages=messages,
                     tools=tools,
-                    model=model,
+                    model=effective_model,
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
@@ -174,7 +186,7 @@ class ResilientProvider(LLMProvider):
         return LLMResponse(
             content=(
                 "⚠️ Xin lỗi bạn, tất cả các nhà cung cấp AI đang gặp sự cố. "
-                "Vui lòng thử lại sau vài phút nhé! 🐈"
+                "Vui lòng thử lại sau vài phút nhé! 🦉"
             ),
             finish_reason="error",
         )
