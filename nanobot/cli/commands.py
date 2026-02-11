@@ -447,7 +447,7 @@ def gateway(
     # Create user manager
     from nanobot.users.manager import UserManager
     user_manager = UserManager()
-    logger.info(f"User manager initialized ({len(user_manager.list_users())} users, {len(user_manager.owner_ids)} owners)")
+    console.print(f"[green]✓[/green] User manager: {len(user_manager.list_users())} users, {len(user_manager.owner_ids)} owners")
     
     # Create channel manager
     channels = ChannelManager(config, bus, session_manager=session_manager, user_manager=user_manager)
