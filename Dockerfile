@@ -1,40 +1,55 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
 
-# Install Node.js 20 for the WhatsApp bridge
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg git && \
-    mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends nodejs && \
-    apt-get purge -y gnupg && \
-    apt-get autoremove -y && \
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates gnupg git nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies first (cached layer)
+# Install dependencies (cached)
 COPY pyproject.toml README.md LICENSE ./
 RUN mkdir -p nanobot bridge && touch nanobot/__init__.py && \
-    uv pip install --system --no-cache . && \
+    uv pip install --system --no-cache --target /app/site-packages . && \
     rm -rf nanobot bridge
 
-# Copy the full source and install
-COPY nanobot/ nanobot/
+# Build Bridge
 COPY bridge/ bridge/
-RUN uv pip install --system --no-cache .
-
-# Build the WhatsApp bridge
 WORKDIR /app/bridge
-RUN npm install && npm run build
+RUN npm ci && npm run build && \
+    rm -rf node_modules src
+
+# Final Stage
+FROM python:3.11-slim-bookworm
+
 WORKDIR /app
 
-# Create config directory
-RUN mkdir -p /root/.nanobot
+# Copy installed packages
+COPY --from=builder /app/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /app/bridge/dist /app/bridge/dist
+COPY --from=builder /app/bridge/package.json /app/bridge/package.json
+
+# Copy source code
+COPY nanobot/ nanobot/
+COPY pyproject.toml README.md LICENSE ./
+COPY bridge/ bridge/
+
+# Runtime dependencies (Node for bridge)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs && \
+    rm -rf /var/lib/apt/lists/* && \
+    # Link nanobot command
+    ln -s /usr/local/lib/python3.11/site-packages/bin/nanobot /usr/local/bin/nanobot
+
+# Create config & data directories
+RUN mkdir -p /root/.nanobot /root/.nanobot/workspace
+
+# Set Python path
+ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
+ENV PATH="/usr/local/bin:${PATH}"
 
 # Gateway default port
 EXPOSE 18790
 
-ENTRYPOINT ["nanobot"]
-CMD ["status"]
+ENTRYPOINT ["python3", "-m", "nanobot"]
+CMD ["gateway"]

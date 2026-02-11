@@ -1,0 +1,15 @@
+services:
+  nanobot:
+    build: .
+    restart: always
+    volumes:
+      - ~/.nanobot:/root/.nanobot
+    ports:
+      - "18790:18790"
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
