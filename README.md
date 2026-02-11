@@ -100,7 +100,7 @@ GenBot includes specialized modes for specific tasks:
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-repo/genbot.git
+git clone https://github.com/dothesung/nanobot.git
 cd genbot
 
 # 2. Build
