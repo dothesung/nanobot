@@ -131,7 +131,13 @@ IMAGE_RATIOS = {
 
 def _parse_smart_buttons(text: str) -> tuple[str, list[list[str]]]:
     """
-    Parse [buttons: A | B | C] markup from LLM response.
+    Parse inline buttons from LLM response.
+    
+    Supports:
+    1. Explicit format: [buttons: A | B | C]
+    2. Auto-detect numbered/lettered options at end of text
+    3. Auto-detect short bullet-point choices
+    4. Yes/No question patterns
     
     Returns:
         (clean_text, button_rows) where button_rows is a list of rows,
@@ -139,46 +145,108 @@ def _parse_smart_buttons(text: str) -> tuple[str, list[list[str]]]:
     """
     import re
     
-    # Match [buttons: ... ] at the end of text (single or multi-line)
+    # --- 1. Explicit [buttons: ...] format (highest priority) ---
     pattern = r'\[buttons:\s*(.*?)\]\s*$'
     match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
     
-    if not match:
-        return text, []
+    if match:
+        clean_text = text[:match.start()].rstrip()
+        raw_buttons = match.group(1).strip()
+        if raw_buttons:
+            rows = []
+            for line in raw_buttons.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                labels = [b.strip()[:30] for b in line.split('|') if b.strip()]
+                if labels:
+                    rows.append(labels)
+            # Single line with many buttons → split into rows of 2
+            if len(rows) == 1 and len(rows[0]) > 3:
+                flat = rows[0]
+                rows = [flat[i:i+2] for i in range(0, len(flat), 2)]
+            return clean_text, _limit_buttons(rows)
     
-    # Strip the markup from the text
-    clean_text = text[:match.start()].rstrip()
-    raw_buttons = match.group(1).strip()
+    # --- 2. Auto-detect numbered/lettered list options ---
+    # Look for patterns like:
+    #   1. Option A    or    a) Option A    or    1️⃣ Option A
+    # Must be at the END of the text (last paragraph)
+    lines = text.rstrip().split('\n')
     
-    if not raw_buttons:
-        return clean_text, []
+    # Find where the last option list starts (scan from bottom)
+    option_pattern = re.compile(
+        r'^\s*(?:'
+        r'(\d+)[.\)]\s+'           # 1. or 1)
+        r'|([a-d])[.\)]\s+'        # a. or a)
+        r'|[•\-\*]\s+'             # bullet points
+        r'|(?:\d️⃣|[①-⑳])\s*'     # emoji numbers
+        r')(.+)$'
+    )
     
-    # Parse button rows (split by newlines, then each row by |)
-    rows = []
-    for line in raw_buttons.split('\n'):
-        line = line.strip()
+    option_lines = []
+    option_start_idx = len(lines)
+    
+    # Scan from bottom to find contiguous option block
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i].strip()
         if not line:
+            if option_lines:
+                break  # Empty line above options = end of block
             continue
-        labels = [b.strip()[:30] for b in line.split('|') if b.strip()]
-        if labels:
-            rows.append(labels)
+        if option_pattern.match(line):
+            option_lines.insert(0, line)
+            option_start_idx = i
+        else:
+            break  # Non-option line = end of block
     
-    # If single line, split into rows of 2-3 buttons
-    if len(rows) == 1 and len(rows[0]) > 3:
-        flat = rows[0]
-        rows = [flat[i:i+2] for i in range(0, len(flat), 2)]
+    # Only create buttons if we found 2-6 short options
+    if 2 <= len(option_lines) <= 6:
+        labels = []
+        for line in option_lines:
+            # Strip the prefix (number, letter, bullet)
+            cleaned = re.sub(
+                r'^\s*(?:\d+[.\)]\s*|[a-d][.\)]\s*|[•\-\*]\s*|\d️⃣\s*|[①-⑳]\s*)',
+                '', line
+            ).strip()
+            # Remove trailing bold/markdown artifacts
+            cleaned = re.sub(r'\*+', '', cleaned).strip()
+            # Only use as button if reasonably short (max 35 chars)
+            if cleaned and len(cleaned) <= 35:
+                labels.append(cleaned[:30])
+        
+        if len(labels) >= 2:
+            # Build rows of 2 buttons each
+            rows = [labels[i:i+2] for i in range(0, len(labels), 2)]
+            # Don't strip the text — keep original for readability
+            return text, _limit_buttons(rows)
     
-    # Max 8 buttons total
+    # --- 3. Yes/No detection ---
+    # Check if last line is a question asking for yes/no or choice
+    last_line = lines[-1].strip() if lines else ""
+    yes_no_patterns = [
+        r'(?:bạn|sếp|anh|chị)\s+(?:có\s+)?(?:muốn|cần|thích|đồng ý|chọn)',
+        r'(?:có|không)\s*\?',
+        r'(?:yes|no|ok)\s*\?',
+        r'(?:tiếp tục|dừng lại|thử)\s*(?:không|chứ|nhé)\s*\?',
+    ]
+    for yp in yes_no_patterns:
+        if re.search(yp, last_line, re.IGNORECASE):
+            return text, [["✅ Có", "❌ Không"]]
+    
+    return text, []
+
+
+def _limit_buttons(rows: list[list[str]], max_total: int = 8) -> list[list[str]]:
+    """Limit total number of buttons."""
     total = 0
-    limited_rows = []
+    limited = []
     for row in rows:
-        remaining = 8 - total
+        remaining = max_total - total
         if remaining <= 0:
             break
-        limited_rows.append(row[:remaining])
-        total += len(limited_rows[-1])
-    
-    return clean_text, limited_rows
+        limited.append(row[:remaining])
+        total += len(limited[-1])
+    return limited
 
 class TelegramChannel(BaseChannel):
     """

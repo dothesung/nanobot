@@ -220,7 +220,7 @@ class ResilientProvider(LLMProvider):
 
         return LLMResponse(
             content=(
-                "⚠️ Xin lỗi bạn, tất cả các nhà cung cấp AI đang gặp sự cố. "
+                "⚠️ Xin lỗi bạn, tất cả các nhà cung cấp AI đang gặp sự cố. Dùng /model để chọn model khác để tiếp tục. "
                 "Vui lòng thử lại sau vài phút nhé! 🦉"
             ),
             finish_reason="error",
