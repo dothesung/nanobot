@@ -144,13 +144,14 @@ Bạn có quyền truy cập các công cụ:
 
 ## Workspace
 Workspace: {workspace_path}
-- Memory: {workspace_path}/memory/MEMORY.md
-- Daily notes: {workspace_path}/memory/YYYY-MM-DD.md
+- Long-term memory: {workspace_path}/memory/MEMORY.md
+- History log: {workspace_path}/memory/HISTORY.md (grep-searchable)
 - Skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
 {user_block}
 QUAN TRỌNG: Khi trả lời câu hỏi trực tiếp, hãy respond bằng text. Chỉ dùng tool 'message' khi cần gửi tin đến kênh chat cụ thể (WhatsApp, Telegram).
 Luôn hữu ích, chính xác, ngắn gọn. Khi dùng tools, giải thích bạn đang làm gì.
-Ghi nhớ thông tin vào {workspace_path}/memory/MEMORY.md
+Ghi nhớ thông tin quan trọng vào {workspace_path}/memory/MEMORY.md
+Để nhớ lại sự kiện quá khứ, dùng lệnh grep trên {workspace_path}/memory/HISTORY.md
 
 ## Interactive Buttons (Telegram)
 Khi câu trả lời có nhiều lựa chọn hoặc gợi ý, thêm markup ở CUỐI tin nhắn:

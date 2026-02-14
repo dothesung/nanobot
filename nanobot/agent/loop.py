@@ -289,6 +289,16 @@ class AgentLoop:
         session.add_message("assistant", final_content)
         self.sessions.save(session)
         
+        # Append to HISTORY.md for grep retrieval
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = (
+            f"### {timestamp} | {msg.channel}:{msg.sender_id}\n"
+            f"**User**: {msg.content}\n"
+            f"**Agent**: {final_content}\n"
+        )
+        self.context.memory.append_history(log_entry)
+        
         # Include effective_model in metadata for display purposes
         out_metadata = dict(msg.metadata or {})
         out_metadata["effective_model"] = effective_model
