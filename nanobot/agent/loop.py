@@ -289,11 +289,15 @@ class AgentLoop:
         session.add_message("assistant", final_content)
         self.sessions.save(session)
         
+        # Include effective_model in metadata for display purposes
+        out_metadata = dict(msg.metadata or {})
+        out_metadata["effective_model"] = effective_model
+        
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,
             content=final_content,
-            metadata=msg.metadata or {},  # Pass through for channel-specific needs (e.g. Slack thread_ts)
+            metadata=out_metadata,
         )
     
     async def _process_system_message(self, msg: InboundMessage) -> OutboundMessage | None:

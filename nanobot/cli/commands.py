@@ -301,22 +301,25 @@ def _make_provider(config):
     
     # Check if using GenPlus provider
     if model.lower().startswith("genplus/") or model.lower().startswith("genplus"):
-        from nanobot.providers.genplus_provider import GenPlusProvider
         from nanobot.providers.direct_provider import DirectProvider
         from nanobot.providers.resilient_provider import ResilientProvider
         
         p = config.providers.genplus
         
-        # Build failover chain: GenPlus → Pollinations → Groq (if configured)
+        # Build failover chain: GenPlus → Pollinations → Grok → Groq
         chain = []
         
-        # 1. Primary: GenPlus Gemini
+        # 1. Primary: GenPlus (OpenAI-compatible endpoint)
+        genplus_key = p.api_key if p and p.api_key else "Genplus123"
+        genplus_base = p.api_base if p and p.api_base else "https://tools.genplusmedia.com/api/chat/v1/chat/completions.php"
+        # Strip model prefix for GenPlus — it uses "genplus" as model name
+        genplus_model = model.replace("genplus/", "") if model.startswith("genplus/") else "genplus"
         chain.append((
             "GenPlus",
-            GenPlusProvider(
-                api_key=p.api_key if p else None,
-                api_base=p.api_base or "https://tools.genplusmedia.com/api/chat/gemini.php",
-                default_model=model,
+            DirectProvider(
+                api_key=genplus_key,
+                api_base=genplus_base,
+                default_model=genplus_model,
             ),
         ))
         

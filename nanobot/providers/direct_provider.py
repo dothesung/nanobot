@@ -26,9 +26,10 @@ class DirectProvider(LLMProvider):
         super().__init__(api_key, api_base)
         self.default_model = default_model
 
-        # Normalize api_base: ensure it ends with /v1/chat/completions
+        # Normalize api_base: ensure it points to chat/completions endpoint
         base = api_base.rstrip("/")
-        if base.endswith("/v1/chat/completions"):
+        if "completions" in base:
+            # Already a full completions URL (e.g. .../completions.php)
             self._url = base
         elif base.endswith("/v1"):
             self._url = f"{base}/chat/completions"
@@ -127,8 +128,19 @@ class DirectProvider(LLMProvider):
                 "total_tokens": raw_usage.get("total_tokens", 0),
             }
 
+        content = message.get("content", "")
+        
+        # Filter out thinking tokens (e.g. Grok thinking models)
+        # Remove "Thinking about..." prefix and <think>...</think> blocks
+        if content:
+            import re
+            # Remove <think>...</think> blocks
+            content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+            # Remove "Thinking about ..." prefix lines (Grok-style)
+            content = re.sub(r'^Thinking about [^\n]*\n*', '', content).strip()
+
         return LLMResponse(
-            content=message.get("content", ""),
+            content=content,
             tool_calls=tool_calls,
             finish_reason=choice.get("finish_reason", "stop"),
             usage=usage,

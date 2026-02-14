@@ -363,13 +363,15 @@ class TelegramChannel(BaseChannel):
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 logger.debug(f"Smart buttons: {[label for row in button_rows for label in row]}")
             
-            # Convert markdown to Telegram HTML
-            from nanobot.config.loader import load_config
-            try:
-                cfg = load_config()
-                model_name = cfg.agents.defaults.model or "unknown"
-            except Exception:
-                model_name = "unknown"
+            # Get model name from response metadata (set by AgentLoop)
+            model_name = msg.metadata.get("effective_model") if msg.metadata else None
+            if not model_name:
+                from nanobot.config.loader import load_config
+                try:
+                    cfg = load_config()
+                    model_name = cfg.agents.defaults.model or "unknown"
+                except Exception:
+                    model_name = "unknown"
             badge = f"\n\n📡 Chat · {model_name}"
             html_content = _markdown_to_telegram_html(clean_content + badge)
             await self._app.bot.send_message(
