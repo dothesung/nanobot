@@ -330,7 +330,19 @@ def _make_provider(config):
             ),
         ))
         
-        # 3. Fallback: Groq (if configured)
+        # 3. Grok Custom (grok-3, grok-4, grok-4-thinking)
+        grok_cfg = config.providers.grok
+        grok_key = grok_cfg.api_key if grok_cfg and grok_cfg.api_key else "sk-53b4519a528995f837f1ad75217f06ca"
+        chain.append((
+            "Grok",
+            DirectProvider(
+                api_key=grok_key,
+                api_base="https://grok.dairoot.cn/v1",
+                default_model="grok-4",
+            ),
+        ))
+        
+        # 4. Fallback: Groq (if configured)
         groq_cfg = config.providers.groq
         if groq_cfg and groq_cfg.api_key:
             chain.append((

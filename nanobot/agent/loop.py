@@ -75,6 +75,7 @@ class AgentLoop:
         )
         
         self._running = False
+        self._chat_models: dict[str, str] = {}  # per-chat model overrides: session_key -> model
         self._register_default_tools()
     
     def _register_default_tools(self) -> None:
@@ -168,12 +169,13 @@ class AgentLoop:
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}: {preview}")
         
-        # Handle model switch metadata — change model without calling LLM
+        # Handle model switch metadata — per-chat model switch
         if msg.metadata and msg.metadata.get("model_switch"):
             new_model = msg.metadata["model_switch"]
-            old_model = self.model or "default"
-            self.model = new_model
-            logger.info(f"Model switched: {old_model} → {new_model}")
+            session_key = msg.session_key
+            old_model = self._chat_models.get(session_key, self.model)
+            self._chat_models[session_key] = new_model
+            logger.info(f"Model switched for {session_key}: {old_model} → {new_model}")
             return None  # Confirmation already sent by Telegram handler
         
         # Load user profile if available
@@ -229,6 +231,10 @@ class AgentLoop:
         iteration = 0
         final_content = None
         
+        # Resolve per-chat model (or fallback to global default)
+        effective_model = self._chat_models.get(msg.session_key, self.model)
+        logger.debug(f"Using model: {effective_model} for session {msg.session_key}")
+        
         while iteration < self.max_iterations:
             iteration += 1
             
@@ -236,7 +242,7 @@ class AgentLoop:
             response = await self.provider.chat(
                 messages=messages,
                 tools=tool_defs if tool_defs else None,
-                model=self.model
+                model=effective_model
             )
             
             # Handle tool calls

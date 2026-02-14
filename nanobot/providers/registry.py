@@ -264,6 +264,25 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
 
     # === Auxiliary (not a primary LLM provider) ============================
 
+    # Grok: Custom OpenAI-compatible endpoint (grok.dairoot.cn).
+    # Supports grok-3, grok-4, grok-4-thinking.
+    ProviderSpec(
+        name="grok",
+        keywords=("grok",),
+        env_key="GROK_CUSTOM_API_KEY",
+        display_name="Grok",
+        litellm_prefix="",
+        skip_prefixes=(),
+        env_extras=(),
+        is_gateway=False,
+        is_local=False,
+        detect_by_key_prefix="",
+        detect_by_base_keyword="grok.dairoot",
+        default_api_base="https://grok.dairoot.cn/v1",
+        strip_model_prefix=False,
+        model_overrides=(),
+    ),
+
     # Groq: mainly used for Whisper voice transcription, also usable for LLM.
     # Needs "groq/" prefix for LiteLLM routing. Placed last — it rarely wins fallback.
     ProviderSpec(

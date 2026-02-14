@@ -117,6 +117,16 @@ class ResilientProvider(LLMProvider):
         errors: list[str] = []
         attempted = 0
 
+        # Parse model prefix for targeted routing.
+        # "grok/grok-4" → target_provider="grok", bare_model="grok-4"
+        # "gemini-fast" → target_provider=None, bare_model="gemini-fast"
+        target_provider: str | None = None
+        bare_model = model
+        if model and "/" in model:
+            prefix, bare = model.split("/", 1)
+            target_provider = prefix.lower()
+            bare_model = bare
+
         for name, provider in self.chain:
             health = self._health[name]
 
@@ -125,19 +135,15 @@ class ResilientProvider(LLMProvider):
                 logger.debug(f"⏭️ Skipping {name} — circuit open")
                 continue
 
-            attempted += 1
+            # If model has a prefix, only route to matching provider
+            if target_provider:
+                if target_provider not in name.lower():
+                    continue  # Skip non-matching providers
+                effective_model = bare_model  # Strip prefix for the provider
+            else:
+                effective_model = model  # No prefix, pass as-is
 
-            # Determine model for this provider:
-            # If model contains a provider prefix (e.g. "genplus/gemini"),
-            # only use it for the matching provider; others use their default.
-            effective_model = model
-            if model and "/" in model:
-                model_prefix = model.split("/")[0].lower()
-                if model_prefix not in name.lower():
-                    effective_model = None  # Use provider's default model
-                    logger.debug(
-                        f"🔄 Model '{model}' not compatible with {name}, using default"
-                    )
+            attempted += 1
 
             try:
                 response = await provider.chat(

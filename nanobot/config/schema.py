@@ -152,6 +152,7 @@ class ProvidersConfig(BaseModel):
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
     aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
     genplus: ProviderConfig = Field(default_factory=ProviderConfig)  # GenPlus Gemini API
+    grok: ProviderConfig = Field(default_factory=ProviderConfig)  # Grok Custom API
 
 
 class GatewayConfig(BaseModel):

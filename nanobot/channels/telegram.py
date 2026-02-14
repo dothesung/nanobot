@@ -748,13 +748,18 @@ class TelegramChannel(BaseChannel):
                  InlineKeyboardButton("🌀 Mistral", callback_data="model:mistral")],
                 [InlineKeyboardButton("🟢 Nova Fast", callback_data="model:nova-fast"),
                  InlineKeyboardButton("🤖 GPT-5 Mini", callback_data="model:openai")],
+                # Grok xAI 
+                [InlineKeyboardButton("🧠 Grok 3", callback_data="model:grok/grok-3"),
+                 InlineKeyboardButton("🧠 Grok 4", callback_data="model:grok/grok-4")],
+                [InlineKeyboardButton("🧠 Grok 4 Thinking", callback_data="model:grok/grok-4-thinking")],
             ]
             await update.message.reply_text(
                 "🔄 <b>Chọn Model AI</b>\n\n"
                 "Bấm để chuyển model nhanh:\n\n"
                 "⭐ <b>GenPlus</b> — Primary (có tool calling)\n"
                 "🔷 <b>Gemini</b> — GenPlus Custom Endpoint\n"
-                "⚡ <b>Free Models</b> — Pollinations AI",
+                "⚡ <b>Free Models</b> — Pollinations AI\n"
+                "🧠 <b>Grok</b> — xAI (grok-3, grok-4, grok-4-thinking)",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
