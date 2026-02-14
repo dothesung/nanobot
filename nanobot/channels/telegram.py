@@ -1087,10 +1087,20 @@ class TelegramChannel(BaseChannel):
                 sender_id = f"{user_id}|{username}" if username else user_id
                 chat_id = str(query.message.chat_id) if query.message else ""
                 
-                # Edit message to show selection
-                await query.edit_message_text(
-                    f"💬 {user_text}",
-                )
+                # Keep original message, remove buttons, show selection
+                original_text = query.message.text or query.message.caption or ""
+                selected_text = f"\n\n👉 Đã chọn: {user_text}"
+                try:
+                    await query.edit_message_text(
+                        original_text + selected_text,
+                        parse_mode=None,  # Plain text to avoid HTML parse issues
+                    )
+                except Exception:
+                    # Fallback: just remove the buttons
+                    try:
+                        await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception:
+                        pass
                 
                 # Start typing indicator
                 self._start_typing(chat_id)
