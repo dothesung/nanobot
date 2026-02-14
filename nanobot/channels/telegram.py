@@ -735,7 +735,7 @@ class TelegramChannel(BaseChannel):
             # Show interactive model selection menu
             keyboard = [
                 # GenPlus Primary
-                [InlineKeyboardButton("⭐ GenPlus (mặc định)", callback_data="model:genplus/gemini-3.0-flash")],
+                [InlineKeyboardButton("⭐ GenPlus (mặc định)", callback_data="model:genplus/genplus")],
                 # GenPlus Custom Endpoint models
                 [InlineKeyboardButton("🔷 Gemini 3.0 Flash", callback_data="model:genplus/gemini-3.0-flash"),
                  InlineKeyboardButton("🔷 Gemini 2.5 Flash", callback_data="model:genplus/gemini-2.5-flash")],

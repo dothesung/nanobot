@@ -127,21 +127,21 @@ class ResilientProvider(LLMProvider):
             target_provider = prefix.lower()
             bare_model = bare
 
+        # Phase 1: Try targeted provider (if prefix specified) or all providers
         for name, provider in self.chain:
             health = self._health[name]
 
-            # Skip providers with open circuit
             if health.is_open:
                 logger.debug(f"⏭️ Skipping {name} — circuit open")
                 continue
 
-            # If model has a prefix, only route to matching provider
+            # If model has a prefix, only route to matching provider in Phase 1
             if target_provider:
                 if target_provider not in name.lower():
-                    continue  # Skip non-matching providers
-                effective_model = bare_model  # Strip prefix for the provider
+                    continue
+                effective_model = bare_model
             else:
-                effective_model = model  # No prefix, pass as-is
+                effective_model = model
 
             attempted += 1
 
@@ -154,36 +154,65 @@ class ResilientProvider(LLMProvider):
                     temperature=temperature,
                 )
 
-                # Check for error responses
                 if response.finish_reason == "error":
                     error_msg = response.content or "Unknown error"
                     health.record_failure(error_msg)
                     errors.append(f"{name}: {error_msg}")
-
                     if self.notify_on_failover and name == self._current_provider_name:
                         logger.warning(f"🔄 Failover: {name} → next provider")
                     continue
 
-                # Success!
                 health.record_success()
-
-                # Log provider switch if different from previous
                 if name != self._current_provider_name:
-                    logger.info(
-                        f"🔄 Provider switched: {self._current_provider_name} → {name}"
-                    )
+                    logger.info(f"🔄 Provider switched: {self._current_provider_name} → {name}")
                     self._current_provider_name = name
-
                 return response
 
             except Exception as e:
                 error_msg = str(e)
                 health.record_failure(error_msg)
                 errors.append(f"{name}: {error_msg}")
-
                 if self.notify_on_failover:
                     logger.warning(f"🔄 Failover: {name} failed ({error_msg[:80]}) → next")
                 continue
+
+        # Phase 2: If targeted provider failed, fallback to ALL other providers with their defaults
+        if target_provider:
+            logger.warning(f"⚡ Targeted provider '{target_provider}' failed — falling back to defaults")
+            for name, provider in self.chain:
+                health = self._health[name]
+                if health.is_open:
+                    continue
+                # Skip the provider we already tried
+                if target_provider in name.lower():
+                    continue
+
+                attempted += 1
+                try:
+                    response = await provider.chat(
+                        messages=messages,
+                        tools=tools,
+                        model=None,  # Use provider's default model
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+
+                    if response.finish_reason == "error":
+                        error_msg = response.content or "Unknown error"
+                        health.record_failure(error_msg)
+                        errors.append(f"{name}(fallback): {error_msg}")
+                        continue
+
+                    health.record_success()
+                    logger.info(f"🔄 Fallback success: {name} (default model)")
+                    self._current_provider_name = name
+                    return response
+
+                except Exception as e:
+                    error_msg = str(e)
+                    health.record_failure(error_msg)
+                    errors.append(f"{name}(fallback): {error_msg}")
+                    continue
 
         # All providers failed
         error_summary = "\n".join(f"  • {e}" for e in errors[-3:])
