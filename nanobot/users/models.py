@@ -84,9 +84,7 @@ class UserProfile:
 
     def check_rate_limit(self) -> bool:
         """Return True if the user is within their daily quota."""
-        from nanobot.utils.helpers import today_date
-
-        today = today_date()
+        today = datetime.now().strftime("%Y-%m-%d")
         if self.usage_date != today:
             self.usage_today = 0
             self.usage_date = today
@@ -100,9 +98,7 @@ class UserProfile:
 
     def record_usage(self) -> None:
         """Increment usage counter."""
-        from nanobot.utils.helpers import today_date
-
-        today = today_date()
+        today = datetime.now().strftime("%Y-%m-%d")
         if self.usage_date != today:
             self.usage_today = 0
             self.usage_date = today
