@@ -24,6 +24,7 @@ class Session:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
+    last_consolidated: int = 0  # Index of last consolidated message
     
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
@@ -56,6 +57,7 @@ class Session:
         """Clear all messages in the session."""
         self.messages = []
         self.updated_at = datetime.now()
+        self.last_consolidated = 0
 
 
 class SessionManager:
@@ -108,6 +110,7 @@ class SessionManager:
             messages = []
             metadata = {}
             created_at = None
+            last_consolidated = 0
             
             with open(path) as f:
                 for line in f:
@@ -120,6 +123,7 @@ class SessionManager:
                     if data.get("_type") == "metadata":
                         metadata = data.get("metadata", {})
                         created_at = datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None
+                        last_consolidated = data.get("last_consolidated", 0)
                     else:
                         messages.append(data)
             
@@ -127,7 +131,8 @@ class SessionManager:
                 key=key,
                 messages=messages,
                 created_at=created_at or datetime.now(),
-                metadata=metadata
+                metadata=metadata,
+                last_consolidated=last_consolidated
             )
         except Exception as e:
             logger.warning(f"Failed to load session {key}: {e}")
@@ -143,7 +148,8 @@ class SessionManager:
                 "_type": "metadata",
                 "created_at": session.created_at.isoformat(),
                 "updated_at": session.updated_at.isoformat(),
-                "metadata": session.metadata
+                "metadata": session.metadata,
+                "last_consolidated": session.last_consolidated
             }
             f.write(json.dumps(metadata_line) + "\n")
             

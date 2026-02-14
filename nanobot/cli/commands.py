@@ -273,11 +273,23 @@ Information about the user goes here.
     
     # Create memory directory and MEMORY.md
     memory_dir = workspace / "memory"
-    memory_dir.mkdir(exist_ok=True)
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    
     memory_file = memory_dir / "MEMORY.md"
     if not memory_file.exists():
         memory_file.write_text("""# Long-term Memory
 
+Stores important facts about the user and project. Auto-updated by the agent.
+""")
+        console.print("  [dim]Created memory/MEMORY.md[/dim]")
+        
+    history_file = memory_dir / "HISTORY.md"
+    if not history_file.exists():
+        history_file.write_text("""# History Log
+
+Append-only log of events and conversations. Searchable via grep.
+""")
+        console.print("  [dim]Created memory/HISTORY.md[/dim]")
 This file stores important information that should persist across sessions.
 
 ## User Information
@@ -421,6 +433,7 @@ def gateway(
         workspace=config.workspace_path,
         model=config.agents.defaults.model,
         max_iterations=config.agents.defaults.max_tool_iterations,
+        memory_window=config.agents.defaults.memory_window,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
         cron_service=cron,
@@ -530,6 +543,7 @@ def agent(
         bus=bus,
         provider=provider,
         workspace=config.workspace_path,
+        memory_window=config.agents.defaults.memory_window,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
         restrict_to_workspace=config.tools.restrict_to_workspace,

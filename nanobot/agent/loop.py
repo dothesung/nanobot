@@ -11,6 +11,7 @@ from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
 from nanobot.agent.context import ContextBuilder
+from nanobot.agent.memory import MemoryStore
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
 from nanobot.agent.tools.shell import ExecTool
@@ -43,6 +44,7 @@ class AgentLoop:
         workspace: Path,
         model: str | None = None,
         max_iterations: int = 20,
+        memory_window: int = 40,
         brave_api_key: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
         cron_service: "CronService | None" = None,
@@ -56,6 +58,7 @@ class AgentLoop:
         self.workspace = workspace
         self.model = model or provider.get_default_model()
         self.max_iterations = max_iterations
+        self.memory_window = memory_window
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
@@ -217,9 +220,13 @@ class AgentLoop:
             if allowed is not None:  # None = unrestricted (Admin)
                 tool_defs = [t for t in tool_defs if t["function"]["name"] in allowed]
         
+        # Trigger memory consolidation if needed
+        if len(session.messages) > self.memory_window:
+            asyncio.create_task(self._consolidate_memory(session))
+        
         # Build initial messages (use get_history for LLM-formatted messages)
         messages = self.context.build_messages(
-            history=session.get_history(),
+            history=session.get_history(max_messages=self.memory_window),
             current_message=msg.content,
             media=msg.media if msg.media else None,
             channel=msg.channel,
@@ -288,16 +295,6 @@ class AgentLoop:
         session.add_message("user", msg.content)
         session.add_message("assistant", final_content)
         self.sessions.save(session)
-        
-        # Append to HISTORY.md for grep retrieval
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_entry = (
-            f"### {timestamp} | {msg.channel}:{msg.sender_id}\n"
-            f"**User**: {msg.content}\n"
-            f"**Agent**: {final_content}\n"
-        )
-        self.context.memory.append_history(log_entry)
         
         # Include effective_model in metadata for display purposes
         out_metadata = dict(msg.metadata or {})
@@ -408,6 +405,91 @@ class AgentLoop:
             chat_id=origin_chat_id,
             content=final_content
         )
+
+    async def _consolidate_memory(self, session, archive_all: bool = False) -> None:
+        """Consolidate old messages into MEMORY.md + HISTORY.md."""
+        memory = MemoryStore(self.workspace)
+
+        if archive_all:
+            old_messages = session.messages
+            keep_count = 0
+            logger.info(f"Memory consolidation (archive_all): {len(session.messages)} total messages archived")
+        else:
+            keep_count = self.memory_window // 2
+            if len(session.messages) <= keep_count:
+                return
+
+            messages_to_process = len(session.messages) - session.last_consolidated
+            if messages_to_process <= 0:
+                return
+
+            old_messages = session.messages[session.last_consolidated:-keep_count]
+            if not old_messages:
+                return
+            logger.info(f"Memory consolidation started: {len(session.messages)} total, {len(old_messages)} new to consolidate, {keep_count} keep")
+
+        # Format conversation
+        lines = []
+        for m in old_messages:
+            if not m.get("content"):
+                continue
+            tools = f" [tools: {', '.join(m.get('tools_used', []))}]" if m.get("tools_used") else ""
+            timestamp = m.get('timestamp', '?')[:16]
+            lines.append(f"[{timestamp}] {m['role'].upper()}{tools}: {m['content']}")
+        conversation = "\n".join(lines)
+        
+        current_memory = memory.read_long_term()
+
+        prompt = f"""You are a memory consolidation agent. Process this conversation and return a JSON object with exactly two keys:
+
+1. "history_entry": A paragraph (2-5 sentences) summarizing the key events/decisions/topics. Start with a timestamp like [YYYY-MM-DD HH:MM]. Include enough detail to be useful when found by grep search later.
+
+2. "memory_update": The updated long-term memory content. Add any new facts: user location, preferences, personal info, habits, project context, technical decisions, tools/services used. If nothing new, return the existing content unchanged.
+
+## Current Long-term Memory
+{current_memory or "(empty)"}
+
+## Conversation to Process
+{conversation}
+
+Respond with ONLY valid JSON, no markdown fences."""
+
+        try:
+            msgs = [
+                {"role": "system", "content": "You are a memory consolidation agent. Respond only with valid JSON."},
+                {"role": "user", "content": prompt},
+            ]
+            
+            response = await self.provider.chat(
+                messages=msgs,
+                model=self.model,
+            )
+            
+            content = response.content or ""
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+                
+            result = json.loads(content)
+
+            if entry := result.get("history_entry"):
+                memory.append_history(entry)
+            
+            if update := result.get("memory_update"):
+                if update != current_memory:
+                    memory.write_long_term(update)
+
+            if archive_all:
+                session.last_consolidated = 0
+            else:
+                session.last_consolidated = len(session.messages) - keep_count
+            
+            logger.info(f"Memory consolidation done: {len(session.messages)} messages, last_consolidated={session.last_consolidated}")
+            self.sessions.save(session)
+            
+        except Exception as e:
+            logger.error(f"Memory consolidation failed: {e}")
     
     async def process_direct(
         self,
