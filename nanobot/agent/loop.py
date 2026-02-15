@@ -48,11 +48,12 @@ class AgentLoop:
         memory_window: int = 40,
         brave_api_key: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
+        crawler_config: "CrawlerConfig | None" = None,
         cron_service: "CronService | None" = None,
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
     ):
-        from nanobot.config.schema import ExecToolConfig
+        from nanobot.config.schema import ExecToolConfig, CrawlerConfig
         from nanobot.cron.service import CronService
         self.bus = bus
         self.provider = provider
@@ -62,6 +63,7 @@ class AgentLoop:
         self.memory_window = memory_window
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
+        self.crawler_config = crawler_config or CrawlerConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         
@@ -111,7 +113,11 @@ class AgentLoop:
         self.tools.register(image_tool)
         
         # Crawl4AI tool
-        self.tools.register(Crawl4AITool())
+        self.tools.register(Crawl4AITool(
+            api_url=self.crawler_config.api_url,
+            max_result_length=self.crawler_config.max_result_length,
+            send_callback=self.bus.publish_outbound
+        ))
         
         # Spawn tool (for subagents)
         spawn_tool = SpawnTool(manager=self.subagents)
@@ -213,6 +219,10 @@ class AgentLoop:
         cron_tool = self.tools.get("cron")
         if isinstance(cron_tool, CronTool):
             cron_tool.set_context(msg.channel, msg.chat_id)
+
+        crawler_tool = self.tools.get("crawler")
+        if isinstance(crawler_tool, Crawl4AITool):
+            crawler_tool.set_context(msg.channel, msg.chat_id)
         
         # Determine allowed tools based on user role
         tool_defs = self.tools.get_definitions()

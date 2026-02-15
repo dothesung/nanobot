@@ -178,10 +178,17 @@ class ExecToolConfig(BaseModel):
     timeout: int = 180
 
 
+class CrawlerConfig(BaseModel):
+    """Crawl4AI crawler configuration."""
+    api_url: str = "http://51.222.205.231:11235"  # Crawl4AI API endpoint
+    max_result_length: int = 12000  # Max chars returned to avoid blowing up context
+
+
 class ToolsConfig(BaseModel):
     """Tools configuration."""
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
+    crawler: CrawlerConfig = Field(default_factory=CrawlerConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
 
 

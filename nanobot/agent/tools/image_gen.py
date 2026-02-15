@@ -77,7 +77,7 @@ class GenerateImageTool(Tool):
                 },
                 "model": {
                     "type": "string",
-                    "description": "AI model: IMAGEN_3_5 (best quality) or GEM_PIX (fast). Default: IMAGEN_3_5",
+                    "description": "AI model: GEM_PIX (best quality) or IMAGEN_3_5 (fast). Default: GEM_PIX",
                     "enum": ["IMAGEN_3_5", "GEM_PIX"],
                 },
             },
@@ -89,7 +89,7 @@ class GenerateImageTool(Tool):
         prompt: str,
         n: int = 1,
         ratio: str = "landscape",
-        model: str = "IMAGEN_3_5",
+        model: str = "GEM_PIX",
         **kwargs: Any,
     ) -> str:
         chat_id = self._default_chat_id

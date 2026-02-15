@@ -12,21 +12,27 @@ from nanobot.agent.tools.base import Tool
 logger = logging.getLogger(__name__)
 
 # ── Configuration ──────────────────────────────────────────────────────────
-CRAWL4AI_URL = "http://51.222.205.231:11235"
-CRAWL_ENDPOINT = f"{CRAWL4AI_URL}/crawl"
-
+# ── Configuration (now injected via __init__) ──────────────────────────────
 EXCLUDED_SOCIAL_DOMAINS = [
     "facebook.com", "twitter.com", "x.com", "linkedin.com",
     "instagram.com", "pinterest.com", "tiktok.com",
     "snapchat.com", "reddit.com",
 ]
 
-# Max characters to return (avoid blowing up context window)
-MAX_RESULT_LENGTH = 12000
-
 
 class Crawl4AITool(Tool):
     """Advanced web crawling & structured data extraction using Crawl4AI."""
+
+    def __init__(
+        self,
+        api_url: str = "http://51.222.205.231:11235",
+        max_result_length: int = 12000,
+        send_callback: Any = None,
+    ):
+        self.api_url = api_url.rstrip("/")
+        self.crawl_endpoint = f"{self.api_url}/crawl"
+        self.max_result_length = max_result_length
+        self.send_callback = send_callback
 
     @property
     def name(self) -> str:
@@ -35,11 +41,13 @@ class Crawl4AITool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Crawl a web page and extract its content as clean Markdown. "
-            "Supports dynamic pages (JavaScript rendering), virtual scrolling "
-            "for infinite feeds (TikTok, YouTube, Facebook), CSS selector targeting, "
-            "and Magic mode for auto-extraction. "
-            "Use this tool when you need to read/scrape/extract data from any website."
+            "Crawl a web page and extract its content. "
+            "Supports: "
+            "1. Plain markdown extraction (default). "
+            "2. Structured extraction via CSS schema or LLM instruction. "
+            "3. Dynamic pages (JS), magic mode, virtual scrolling. "
+            "4. Multi-step crawling via session_id (login -> crawl). "
+            "5. Screenshots."
         )
 
     @property
@@ -53,27 +61,35 @@ class Crawl4AITool(Tool):
                 },
                 "css_selector": {
                     "type": "string",
-                    "description": "CSS selector to extract only specific elements (e.g. '.video-feed-item', '#main-content')",
+                    "description": "CSS selector to extract only specific elements (e.g. '.video-feed-item')",
+                },
+                "extraction_schema": {
+                    "type": "object",
+                    "description": "JSON schema for CSS-based structured extraction (e.g. {'name': 'Items', 'baseSelector': '.item', 'fields': [...]})",
+                },
+                "extraction_instruction": {
+                    "type": "string",
+                    "description": "Instruction for LLM-based extraction (e.g. 'Extract all product names and prices')",
                 },
                 "js_code": {
                     "type": "string",
-                    "description": "JavaScript code to execute on the page before extraction (e.g. click buttons, dismiss popups)",
+                    "description": "JavaScript code to execute on the page before extraction",
                 },
                 "wait_for": {
                     "type": "string",
-                    "description": "CSS selector or JS expression to wait for before extracting (e.g. 'css:.video-list' or 'js:() => document.querySelectorAll(\".item\").length > 5')",
+                    "description": "CSS selector or JS expression to wait for",
                 },
                 "magic": {
                     "type": "boolean",
-                    "description": "Enable magic mode for automatic content detection and anti-bot bypass (default: false)",
+                    "description": "Enable magic mode for anti-bot bypass (default: false)",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID to reuse browser context (e.g. for multi-step flows)",
                 },
                 "virtual_scroll": {
                     "type": "boolean",
-                    "description": "Enable virtual scrolling to load infinite feed content like TikTok/YouTube (default: false)",
-                },
-                "scroll_count": {
-                    "type": "integer",
-                    "description": "Number of scrolls when virtual_scroll is enabled (default: 10)",
+                    "description": "Enable virtual scrolling for infinite feeds (default: false)",
                 },
                 "screenshot": {
                     "type": "boolean",
@@ -83,6 +99,15 @@ class Crawl4AITool(Tool):
                     "type": "boolean",
                     "description": "Exclude links to social media domains from output (default: true)",
                 },
+                "cookies": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "List of cookies to set (for auth)",
+                },
+                "headers": {
+                    "type": "object",
+                    "description": "Custom HTTP headers",
+                },
             },
             "required": ["url"],
         }
@@ -91,13 +116,18 @@ class Crawl4AITool(Tool):
         self,
         url: str,
         css_selector: str | None = None,
+        extraction_schema: dict[str, Any] | None = None,
+        extraction_instruction: str | None = None,
         js_code: str | None = None,
         wait_for: str | None = None,
         magic: bool = False,
+        session_id: str | None = None,
         virtual_scroll: bool = False,
         scroll_count: int = 10,
         screenshot: bool = False,
         exclude_social: bool = True,
+        cookies: list[dict[str, Any]] | None = None,
+        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> str:
         # ── Auto-detect social media URLs ─────────────────────────────
@@ -123,7 +153,21 @@ class Crawl4AITool(Tool):
             "page_timeout": 120000,  # 120s for slow/dynamic pages
         }
 
-        if css_selector:
+        # Handle extraction strategies (priority: schema > instruction > css_selector)
+        if extraction_schema:
+            params["extraction_strategy"] = {
+                "type": "JsonCssExtractionStrategy",
+                "params": {"schema": extraction_schema}
+            }
+        elif extraction_instruction:
+            params["extraction_strategy"] = {
+                "type": "LLMExtractionStrategy",
+                "params": {
+                    "provider": "openai/gpt-4o-mini",  # Default efficient model
+                    "instruction": extraction_instruction
+                }
+            }
+        elif css_selector:
             params["css_selector"] = css_selector
 
         if js_code:
@@ -136,6 +180,9 @@ class Crawl4AITool(Tool):
             params["magic"] = True
             params["simulate_user"] = True
             params["override_navigator"] = True
+        
+        if session_id:
+            params["session_id"] = session_id
 
         if screenshot:
             params["screenshot"] = True
@@ -147,6 +194,24 @@ class Crawl4AITool(Tool):
             params["scan_full_page"] = True
             params["scroll_delay"] = 1.0
             params["max_scroll_steps"] = scroll_count
+            
+        if cookies:
+            params["cookies"] = cookies
+            
+        # Default headers to mimic real browser
+        default_headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-User": "?1",
+            "Sec-Fetch-Dest": "document",
+        }
+        
+        if headers:
+            default_headers.update(headers)
+            
+        params["headers"] = default_headers
 
         # ── Build request payload ────────────────────────────────────
         payload = {
@@ -157,20 +222,23 @@ class Crawl4AITool(Tool):
             },
         }
 
-        logger.info(f"crawler: crawling {url} (magic={magic}, virtual_scroll={virtual_scroll}, social={is_social})")
+        # ── Logging ──────────────────────────────────────────────────
+        cookie_info = f"{len(cookies)} cookies" if cookies else "no cookies"
+        header_info = f"headers={list(headers.keys())}" if headers else "no headers"
+        logger.info(f"crawler: crawling {url} (magic={magic}, session={session_id}, {cookie_info}, {header_info}, extraction={bool(extraction_schema or extraction_instruction)})")
 
         try:
             timeout = aiohttp.ClientTimeout(total=180)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
-                    CRAWL_ENDPOINT,
+                    self.crawl_endpoint,
                     json=payload,
                     headers={"Content-Type": "application/json"},
                 ) as resp:
                     if resp.status != 200:
                         text = await resp.text()
                         logger.error(f"Crawl4AI error ({resp.status}): {text[:300]}")
-                        return f"Lỗi API Crawl4AI (status {resp.status}): {text[:200]}"
+                        return f"Lỗi API Crawl4AI (status {resp.status}) tại {self.api_url}: {text[:200]}"
 
                     data = await resp.json()
 
@@ -212,8 +280,10 @@ class Crawl4AITool(Tool):
                     if desc:
                         parts.append(f"**Mô tả:** {desc}")
 
-                # Main content (markdown)
-                if markdown:
+                # Main content (markdown or extracted)
+                if extracted and (extraction_schema or extraction_instruction):
+                     parts.append(f"\n### Dữ liệu trích xuất (Structured):\n```json\n{extracted}\n```")
+                elif markdown:
                     parts.append(f"\n### Nội dung:\n{markdown}")
                 elif extracted:
                     parts.append(f"\n### Nội dung trích xuất:\n{extracted}")
@@ -230,10 +300,6 @@ class Crawl4AITool(Tool):
                                 parts.append(f"  - {src}")
                     if videos:
                         parts.append(f"\n**🎬 Video:** {len(videos)} video")
-                        for vid in videos[:5]:
-                            src = vid.get("src", "") if isinstance(vid, dict) else str(vid)
-                            if src:
-                                parts.append(f"  - {src}")
 
                 # Links summary
                 if links and isinstance(links, dict):
@@ -244,15 +310,18 @@ class Crawl4AITool(Tool):
                     if external:
                         parts.append(f"**🌐 Links ngoài:** {len(external)}")
 
-                # Tables summary
-                if tables:
-                    parts.append(f"\n**📊 Bảng dữ liệu:** {len(tables)}")
-
-                # Screenshot
+                # Screenshot handling
                 ss = r.get("screenshot")
                 if ss and isinstance(ss, str) and len(ss) > 100:
                     parts.append(f"\n📸 Screenshot đã chụp ({len(ss)} bytes)")
-
+                    # Send callback if available
+                    if self.send_callback and self.channel and self.chat_id:
+                        try:
+                            # Create a task to send photo so we don't block
+                            asyncio.create_task(self._send_photo(ss, page_url))
+                        except Exception as e:
+                            logger.error(f"Failed to send screenshot: {e}")
+                        
                 output_parts.append("\n".join(parts))
 
             # Server stats
@@ -263,8 +332,8 @@ class Crawl4AITool(Tool):
             full_output = "\n\n---\n\n".join(output_parts)
 
             # Truncate if too long
-            if len(full_output) > MAX_RESULT_LENGTH:
-                full_output = full_output[:MAX_RESULT_LENGTH] + f"\n\n... (đã cắt bớt, tổng {len(full_output)} ký tự)"
+            if len(full_output) > self.max_result_length:
+                full_output = full_output[:self.max_result_length] + f"\n\n... (đã cắt bớt, tổng {len(full_output)} ký tự)"
 
             return full_output
 
@@ -272,7 +341,30 @@ class Crawl4AITool(Tool):
             return f"Timeout: Crawl4AI mất quá lâu khi cào {url} (>180s). Thử giảm scroll_count hoặc dùng css_selector."
         except aiohttp.ClientError as e:
             logger.error(f"Crawl4AI connection error: {e}")
-            return f"Lỗi kết nối Crawl4AI: {str(e)}. Kiểm tra VPS ({CRAWL4AI_URL}) có đang chạy không."
+            return f"Lỗi kết nối Crawl4AI: {str(e)}. Kiểm tra URL {self.api_url}."
         except Exception as e:
             logger.error(f"crawler error: {e}", exc_info=True)
             return f"Lỗi: {str(e)}"
+
+    def set_context(self, channel: str, chat_id: str) -> None:
+        """Set the context for sending messages."""
+        self.channel = channel
+        self.chat_id = chat_id
+
+    async def _send_photo(self, b64_data: str, url: str) -> None:
+        """Send photo via callback."""
+        from nanobot.bus.events import OutboundMessage
+        
+        # Metadata for Telegram channel to handle as photo
+        metadata = {
+            "type": "photos",
+            "photos": [{"base64": b64_data}],
+        }
+        
+        msg = OutboundMessage(
+            channel=self.channel,
+            chat_id=self.chat_id,
+            content=f"📸 Screenshot: {url}",
+            metadata=metadata,
+        )
+        await self.send_callback(msg)

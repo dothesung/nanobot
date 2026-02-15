@@ -194,14 +194,36 @@ class WebFetchTool(Tool):
         except Exception as e:
             return json.dumps({"error": str(e), "url": url})
     
-    def _to_markdown(self, html: str) -> str:
-        """Convert HTML to markdown."""
-        # Convert links, headings, lists before stripping tags
-        text = re.sub(r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>',
-                      lambda m: f'[{_strip_tags(m[2])}]({m[1]})', html, flags=re.I)
-        text = re.sub(r'<h([1-6])[^>]*>([\s\S]*?)</h\1>',
-                      lambda m: f'\n{"#" * int(m[1])} {_strip_tags(m[2])}\n', text, flags=re.I)
-        text = re.sub(r'<li[^>]*>([\s\S]*?)</li>', lambda m: f'\n- {_strip_tags(m[1])}', text, flags=re.I)
-        text = re.sub(r'</(p|div|section|article)>', '\n\n', text, flags=re.I)
-        text = re.sub(r'<(br|hr)\s*/?>', '\n', text, flags=re.I)
-        return _normalize(_strip_tags(text))
+    def _to_markdown(self, html_content: str) -> str:
+        """Convert HTML to cleaner Markdown."""
+        try:
+            import html2text
+            h = html2text.HTML2Text()
+            h.ignore_links = False
+            h.ignore_images = False
+            h.body_width = 0  # No wrapping
+            return h.handle(html_content).strip()
+        except ImportError:
+            # Fallback to regex-based conversion
+            import re
+            text = html_content
+            
+            # Basic cleanup
+            text = re.sub(r'<script.*?>.*?</script>', '', text, flags=re.DOTALL)
+            text = re.sub(r'<style.*?>.*?</style>', '', text, flags=re.DOTALL)
+            
+            # Simple tag replacements
+            text = re.sub(r'<h1>(.*?)</h1>', r'# \1\n', text)
+            text = re.sub(r'<h2>(.*?)</h2>', r'## \1\n', text)
+            text = re.sub(r'<h3>(.*?)</h3>', r'### \1\n', text)
+            text = re.sub(r'<p>(.*?)</p>', r'\1\n\n', text)
+            text = re.sub(r'<br\s*/?>', '\n', text)
+            text = re.sub(r'<li>(.*?)</li>', r'- \1\n', text)
+            
+            # Links
+            text = re.sub(r'<a href="(.*?)".*?>(.*?)</a>', r'[\2](\1)', text)
+            
+            # Remove remaining tags
+            text = re.sub(r'<[^>]+>', '', text)
+            
+            return '\n'.join(line.strip() for line in text.splitlines() if line.strip())
