@@ -5,7 +5,7 @@ from typing import Callable, Awaitable
 
 from loguru import logger
 
-from nanobot.bus.events import InboundMessage, OutboundMessage
+from nanobot.bus.events import InboundMessage, OutboundMessage, ProgressMessage
 
 
 class MessageBus:
@@ -19,7 +19,9 @@ class MessageBus:
     def __init__(self):
         self.inbound: asyncio.Queue[InboundMessage] = asyncio.Queue()
         self.outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue()
+        self.progress: asyncio.Queue[ProgressMessage] = asyncio.Queue()
         self._outbound_subscribers: dict[str, list[Callable[[OutboundMessage], Awaitable[None]]]] = {}
+        self._progress_subscribers: dict[str, list[Callable[[ProgressMessage], Awaitable[None]]]] = {}
         self._running = False
     
     async def publish_inbound(self, msg: InboundMessage) -> None:
@@ -38,6 +40,10 @@ class MessageBus:
         """Consume the next outbound message (blocks until available)."""
         return await self.outbound.get()
     
+    async def publish_progress(self, msg: ProgressMessage) -> None:
+        """Publish a progress update from the agent."""
+        await self.progress.put(msg)
+    
     def subscribe_outbound(
         self, 
         channel: str, 
@@ -47,6 +53,16 @@ class MessageBus:
         if channel not in self._outbound_subscribers:
             self._outbound_subscribers[channel] = []
         self._outbound_subscribers[channel].append(callback)
+    
+    def subscribe_progress(
+        self,
+        channel: str,
+        callback: Callable[[ProgressMessage], Awaitable[None]]
+    ) -> None:
+        """Subscribe to progress updates for a specific channel."""
+        if channel not in self._progress_subscribers:
+            self._progress_subscribers[channel] = []
+        self._progress_subscribers[channel].append(callback)
     
     async def dispatch_outbound(self) -> None:
         """
@@ -63,6 +79,23 @@ class MessageBus:
                         await callback(msg)
                     except Exception as e:
                         logger.error(f"Error dispatching to {msg.channel}: {e}")
+            except asyncio.TimeoutError:
+                continue
+    
+    async def dispatch_progress(self) -> None:
+        """
+        Dispatch progress updates to subscribed channels.
+        Run this as a background task.
+        """
+        while self._running:
+            try:
+                msg = await asyncio.wait_for(self.progress.get(), timeout=1.0)
+                subscribers = self._progress_subscribers.get(msg.channel, [])
+                for callback in subscribers:
+                    try:
+                        await callback(msg)
+                    except Exception as e:
+                        logger.error(f"Error dispatching progress to {msg.channel}: {e}")
             except asyncio.TimeoutError:
                 continue
     

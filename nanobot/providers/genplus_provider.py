@@ -131,7 +131,17 @@ class GenPlusProvider(LLMProvider):
                     headers={"Content-Type": "application/json"},
                     timeout=aiohttp.ClientTimeout(total=60),
                 ) as response:
-                    result = await response.json()
+                    # Use content_type=None to skip MIME validation
+                    # GenPlus sometimes returns text/html content-type with valid JSON body
+                    try:
+                        result = await response.json(content_type=None)
+                    except Exception:
+                        raw = await response.text()
+                        logger.warning(f"GenPlus JSON parse failed, raw response: {raw[:200]}")
+                        return LLMResponse(
+                            content=f"API Error: Invalid JSON response",
+                            finish_reason="error",
+                        )
                     
                     if result.get("status"):
                         content = result.get("data", "")
@@ -182,20 +192,20 @@ class GenPlusProvider(LLMProvider):
         tools_json = json.dumps(tool_descs, indent=2)
         
         return (
-            "\n## TOOL USAGE\n"
+            "\n## TOOL USAGE INSTRUCTIONS\n"
             "You have access to the following tools:\n\n"
             + tools_json + "\n\n"
-            "To use a tool, you MUST output a JSON block wrapped in <tool_code> tags.\n"
-            "Format:\n"
+            "### RULES:\n"
+            "1. **THINK FIRST**: Before using a tool, explain WHY you need it in a short sentence.\n"
+            "2. **NO HALLUCINATIONS**: Do NOT say you have done something (like creating an image) unless you have successfully emitted the tool code.\n"
+            "3. **JSON FORMAT**: To use a tool, you MUST output a valid JSON block wrapped in <tool_code> tags.\n"
+            "4. **ONE TOOL PER BLOCK**: You can call multiple tools, but each must be in its own <tool_code> block.\n"
+            "5. **parameters**: Verify you are using the correct arguments matching the schema.\n\n"
+            "### FORMAT:\n"
+            "Thinking: I need to search for the latest news.\n"
             "<tool_code>\n"
-            '{"name": "tool_name", "arguments": {"arg1": "value1"}}\n'
-            "</tool_code>\n\n"
-            "IMPORTANT:\n"
-            "- Only use tools when necessary.\n"
-            "- You can call multiple tools if needed, but one per <tool_code> block.\n"
-            "- If no tool is needed, just respond with text.\n"
-            "- Verify you are using the correct arguments as defined in the schema.\n"
-            "- Do NOT wrap URLs in markdown format. Use plain URLs like https://example.com\n"
+            '{"name": "web_search", "arguments": {"query": "latest news Vietnam"}}\n'
+            "</tool_code>\n"
         )
 
     def _parse_tool_calls(self, content: str) -> tuple[list[Any], str | None]:

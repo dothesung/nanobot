@@ -24,6 +24,17 @@ class InboundMessage:
 
 
 @dataclass
+class ProgressMessage:
+    """Mid-processing status update sent to channel while agent is working."""
+    
+    channel: str
+    chat_id: str
+    status: str  # e.g. "🤔 Đang suy nghĩ...", "🔍 Đang tìm kiếm..."
+    message_id: int | None = None  # Telegram message ID to edit (set after first send)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class OutboundMessage:
     """Message to send to a chat channel."""
     

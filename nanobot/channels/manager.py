@@ -149,6 +149,9 @@ class ChannelManager:
         # Start outbound dispatcher
         self._dispatch_task = asyncio.create_task(self._dispatch_outbound())
         
+        # Start progress dispatcher
+        self._progress_task = asyncio.create_task(self._dispatch_progress())
+        
         # Start channels
         tasks = []
         for name, channel in self.channels.items():
@@ -162,13 +165,14 @@ class ChannelManager:
         """Stop all channels and the dispatcher."""
         logger.info("Stopping all channels...")
         
-        # Stop dispatcher
-        if self._dispatch_task:
-            self._dispatch_task.cancel()
-            try:
-                await self._dispatch_task
-            except asyncio.CancelledError:
-                pass
+        # Stop dispatchers
+        for task in [self._dispatch_task, getattr(self, '_progress_task', None)]:
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         
         # Stop all channels
         for name, channel in self.channels.items():
@@ -198,6 +202,29 @@ class ChannelManager:
                 else:
                     logger.warning(f"Unknown channel: {msg.channel}")
                     
+            except asyncio.TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                break
+    
+    async def _dispatch_progress(self) -> None:
+        """Dispatch progress updates to the appropriate channel."""
+        logger.info("Progress dispatcher started")
+        
+        while True:
+            try:
+                msg = await asyncio.wait_for(
+                    self.bus.progress.get(),
+                    timeout=1.0
+                )
+                
+                channel = self.channels.get(msg.channel)
+                if channel and hasattr(channel, '_on_progress'):
+                    try:
+                        await channel._on_progress(msg)
+                    except Exception as e:
+                        logger.debug(f"Error sending progress to {msg.channel}: {e}")
+                        
             except asyncio.TimeoutError:
                 continue
             except asyncio.CancelledError:

@@ -72,7 +72,16 @@ class DirectProvider(LLMProvider):
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=120),
                 ) as resp:
-                    data = await resp.json()
+                    # Use content_type=None to skip MIME validation
+                    # Some endpoints return text/html content-type with valid JSON body
+                    try:
+                        data = await resp.json(content_type=None)
+                    except Exception:
+                        raw = await resp.text()
+                        return LLMResponse(
+                            content=f"API Error: Invalid JSON response ({raw[:100]})",
+                            finish_reason="error",
+                        )
 
                     if resp.status != 200:
                         error = data.get("error", {})

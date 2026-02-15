@@ -284,6 +284,10 @@ class TelegramChannel(BaseChannel):
         self._app: Application | None = None
         self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
         self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id -> typing loop task
+        self._progress_message_ids: dict[str, int] = {}  # chat_id -> message_id of progress msg
+        
+        # Subscribe to progress updates
+        self.bus.subscribe_progress(self.name, self._on_progress)
     
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
@@ -388,8 +392,19 @@ class TelegramChannel(BaseChannel):
             # chat_id should be the Telegram chat ID (integer)
             chat_id = int(msg.chat_id)
             
+            # Check if we should edit progress message instead of sending new one
+            progress_msg_id = self._progress_message_ids.pop(msg.chat_id, None)
+            should_edit = msg.metadata.get("edit_progress") and progress_msg_id
+            
             # Handle photo messages from generate_image tool
             if msg.metadata.get("type") == "photos":
+                # Delete progress message if exists (can't edit to photo)
+                if progress_msg_id:
+                    try:
+                        await self._app.bot.delete_message(chat_id=chat_id, message_id=progress_msg_id)
+                    except Exception:
+                        pass
+                
                 photos = msg.metadata.get("photos", [])
                 for i, photo_data in enumerate(photos):
                     b64 = photo_data.get("base64", "")
@@ -442,6 +457,22 @@ class TelegramChannel(BaseChannel):
                     model_name = "unknown"
             badge = f"\n\n📡 Chat · {model_name}"
             html_content = _markdown_to_telegram_html(clean_content + badge)
+            
+            # Edit progress message or send new message
+            if should_edit:
+                try:
+                    await self._app.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=progress_msg_id,
+                        text=html_content,
+                        parse_mode="HTML",
+                        reply_markup=reply_markup,
+                    )
+                    return
+                except Exception as e:
+                    logger.debug(f"Failed to edit progress message, sending new: {e}")
+                    # Fall through to send new message
+            
             await self._app.bot.send_message(
                 chat_id=chat_id,
                 text=html_content,
@@ -460,6 +491,36 @@ class TelegramChannel(BaseChannel):
                 )
             except Exception as e2:
                 logger.error(f"Error sending Telegram message: {e2}")
+    
+    async def _on_progress(self, progress) -> None:
+        """Handle progress update from agent — send or edit status message."""
+        if not self._app:
+            return
+        
+        try:
+            chat_id = int(progress.chat_id)
+            existing_msg_id = self._progress_message_ids.get(progress.chat_id)
+            
+            if existing_msg_id:
+                # Edit existing progress message
+                try:
+                    await self._app.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=existing_msg_id,
+                        text=progress.status,
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to edit progress message: {e}")
+            else:
+                # Send new progress message and store its ID
+                sent = await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=progress.status,
+                )
+                self._progress_message_ids[progress.chat_id] = sent.message_id
+                logger.debug(f"Progress message sent: {progress.status} (msg_id={sent.message_id})")
+        except Exception as e:
+            logger.debug(f"Progress update failed: {e}")
     
     async def _on_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -1200,6 +1261,18 @@ class TelegramChannel(BaseChannel):
             except Exception as e:
                 logger.error(f"Failed to download media: {e}")
                 content_parts.append(f"[{media_type}: download failed]")
+        
+        # Handle reply-to-message context
+        # When user replies to a previous message, include the original message as context
+        if message.reply_to_message:
+            reply_msg = message.reply_to_message
+            reply_text = reply_msg.text or reply_msg.caption or ""
+            if reply_text:
+                # Truncate very long quoted messages
+                if len(reply_text) > 500:
+                    reply_text = reply_text[:500] + "..."
+                content_parts.insert(0, f"[Trả lời tin nhắn: \"{reply_text}\"]")
+                logger.debug(f"Reply context: {reply_text[:60]}...")
         
         content = "\n".join(content_parts) if content_parts else "[empty message]"
         

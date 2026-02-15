@@ -7,7 +7,7 @@ from typing import Any
 
 from loguru import logger
 
-from nanobot.bus.events import InboundMessage, OutboundMessage
+from nanobot.bus.events import InboundMessage, OutboundMessage, ProgressMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
 from nanobot.agent.context import ContextBuilder
@@ -242,6 +242,14 @@ class AgentLoop:
         effective_model = self._chat_models.get(msg.session_key, self.model)
         logger.debug(f"Using model: {effective_model} for session {msg.session_key}")
         
+        # Send initial "thinking" progress
+        progress = ProgressMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            status="🤔 Đang suy nghĩ...",
+        )
+        await self.bus.publish_progress(progress)
+        
         while iteration < self.max_iterations:
             iteration += 1
             
@@ -271,10 +279,19 @@ class AgentLoop:
                     reasoning_content=response.reasoning_content,
                 )
                 
-                # Execute tools
+                # Execute tools with progress updates
                 for tool_call in response.tool_calls:
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                     logger.info(f"Tool call: {tool_call.name}({args_str[:200]})")
+                    
+                    # Publish tool-specific progress
+                    tool_status = self._tool_progress_status(tool_call.name, tool_call.arguments)
+                    await self.bus.publish_progress(ProgressMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        status=tool_status,
+                    ))
+                    
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
@@ -285,7 +302,11 @@ class AgentLoop:
                 break
         
         if final_content is None:
-            final_content = "I've completed processing but have no response to give."
+            final_content = "Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại nhé! 🦉"
+        
+        # Guard against empty/whitespace-only responses
+        if not final_content.strip():
+            final_content = "Xin lỗi, mình không tạo được câu trả lời cho tin nhắn này. Bạn thử diễn đạt lại hoặc thử lại sau nhé! 🦉"
         
         # Log response preview
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
@@ -299,6 +320,7 @@ class AgentLoop:
         # Include effective_model in metadata for display purposes
         out_metadata = dict(msg.metadata or {})
         out_metadata["effective_model"] = effective_model
+        out_metadata["edit_progress"] = True  # Tell channel to edit progress message
         
         return OutboundMessage(
             channel=msg.channel,
@@ -405,6 +427,39 @@ class AgentLoop:
             chat_id=origin_chat_id,
             content=final_content
         )
+
+    @staticmethod
+    def _tool_progress_status(tool_name: str, args: dict) -> str:
+        """Map tool name to user-friendly progress status."""
+        status_map = {
+            "web_search": "🔍 Đang tìm kiếm web...",
+            "web_fetch": "🌐 Đang tải trang web...",
+            "crawl4ai": "🕷️ Đang cào dữ liệu web...",
+            "exec": "⚙️ Đang thực thi lệnh...",
+            "read_file": "📖 Đang đọc file...",
+            "write_file": "✍️ Đang ghi file...",
+            "edit_file": "✏️ Đang sửa file...",
+            "list_directory": "📂 Đang liệt kê thư mục...",
+            "generate_image": "🎨 Đang tạo ảnh...",
+            "message": "💬 Đang gửi tin nhắn...",
+            "spawn": "🚀 Đang khởi tạo tác vụ nền...",
+            "cron": "⏰ Đang thiết lập lịch...",
+        }
+        status = status_map.get(tool_name, f"🔧 Đang dùng {tool_name}...")
+        
+        # Add context for specific tools
+        if tool_name == "web_search" and args.get("query"):
+            query = args["query"][:40]
+            status = f"🔍 Đang tìm kiếm: {query}..."
+        elif tool_name == "exec" and args.get("command"):
+            cmd = args["command"][:30]
+            status = f"⚙️ Đang chạy: {cmd}..."
+        elif tool_name == "crawl4ai" and args.get("url"):
+            from urllib.parse import urlparse
+            domain = urlparse(args["url"]).netloc[:25]
+            status = f"🕷️ Đang cào: {domain}..."
+        
+        return status
 
     async def _consolidate_memory(self, session, archive_all: bool = False) -> None:
         """Consolidate old messages into MEMORY.md + HISTORY.md."""
