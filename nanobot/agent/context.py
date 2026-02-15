@@ -148,25 +148,9 @@ Workspace: {workspace_path}
 - History log: {workspace_path}/memory/HISTORY.md (grep-searchable)
 - Skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
 {user_block}
-QUAN TRỌNG: Khi trả lời câu hỏi trực tiếp, hãy respond bằng text. Chỉ dùng tool 'message' khi cần gửi tin đến kênh chat cụ thể (WhatsApp, Telegram).
 Luôn hữu ích, chính xác, ngắn gọn. Khi dùng tools, giải thích bạn đang làm gì.
 Ghi nhớ thông tin quan trọng vào {workspace_path}/memory/MEMORY.md
-Để nhớ lại sự kiện quá khứ, dùng lệnh grep trên {workspace_path}/memory/HISTORY.md
-
-## Interactive Buttons (Telegram)
-Khi câu trả lời có nhiều lựa chọn hoặc gợi ý, thêm markup ở CUỐI tin nhắn:
-[buttons: Lựa chọn 1 | Lựa chọn 2 | Lựa chọn 3]
-
-Ví dụ:
-- Hỏi "Bạn muốn tìm hiểu framework nào?" → [buttons: React | Vue | Svelte]
-- Gợi ý hành động tiếp theo → [buttons: Xem thêm | Ví dụ code | Chuyển chủ đề]
-- Câu hỏi Yes/No → [buttons: Có ✅ | Không ❌]
-
-Quy tắc:
-- Mỗi button tối đa 30 ký tự
-- Tối đa 8 buttons mỗi tin nhắn
-- KHÔNG dùng buttons cho mọi tin nhắn — chỉ khi thực sự có lựa chọn
-- Buttons nên bằng tiếng Việt, nội dung ngắn gọn"""
+Để nhớ lại sự kiện quá khứ, dùng lệnh grep trên {workspace_path}/memory/HISTORY.md"""
     
     def _load_bootstrap_files(self, user_profile: "UserProfile | None" = None) -> str:
         """Load all bootstrap files from workspace."""
