@@ -1,6 +1,7 @@
 """Base LLM provider interface."""
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -64,7 +65,34 @@ class LLMProvider(ABC):
         """
         pass
     
+    async def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream a chat completion, yielding text chunks.
+        
+        Default implementation: calls chat() and yields the full content.
+        Override in providers that support SSE streaming.
+        
+        Note: stream_chat does NOT support tools — it's only used for
+        the final response after all tool calls are done.
+        """
+        response = await self.chat(
+            messages=messages,
+            tools=None,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        if response.content:
+            yield response.content
+    
     @abstractmethod
     def get_default_model(self) -> str:
         """Get the default model for this provider."""
         pass
+

@@ -1,6 +1,7 @@
 """Direct HTTP provider — bypasses LiteLLM for custom OpenAI-compatible endpoints."""
 
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import aiohttp
@@ -99,6 +100,70 @@ class DirectProvider(LLMProvider):
                 finish_reason="error",
             )
 
+    async def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+    ) -> AsyncGenerator[str, None]:
+        """Stream chat completion via SSE (Server-Sent Events)."""
+        model = model or self.default_model
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+        }
+
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self._url,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as resp:
+                    if resp.status != 200:
+                        # Non-streaming fallback on error
+                        raw = await resp.text()
+                        yield f"Error: {raw[:200]}"
+                        return
+
+                    # Parse SSE stream
+                    async for line in resp.content:
+                        text = line.decode("utf-8", errors="ignore").strip()
+                        if not text or not text.startswith("data:"):
+                            continue
+                        
+                        data_str = text[5:].strip()  # Remove "data: " prefix
+                        
+                        if data_str == "[DONE]":
+                            break
+                        
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                        except (json.JSONDecodeError, IndexError):
+                            continue
+
+        except Exception:
+            # Fallback: use non-streaming chat
+            response = await self.chat(messages=messages, model=model, max_tokens=max_tokens, temperature=temperature)
+            if response.content:
+                yield response.content
+
     def _parse_response(self, data: dict) -> LLMResponse:
         """Parse OpenAI-compatible JSON response."""
         choices = data.get("choices", [])
@@ -158,3 +223,4 @@ class DirectProvider(LLMProvider):
     def get_default_model(self) -> str:
         """Get the default model."""
         return self.default_model
+

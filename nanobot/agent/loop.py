@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -297,8 +298,14 @@ class AgentLoop:
                         messages, tool_call.id, tool_call.name, result
                     )
             else:
-                # No tool calls, we're done
+                # No tool calls — use the content we already have
                 final_content = response.content
+                
+                # Simulate streaming by chunking the response text
+                if final_content and len(final_content) > 80:
+                    await self._simulate_streaming(
+                        final_content, msg.channel, msg.chat_id
+                    )
                 break
         
         if final_content is None:
@@ -427,6 +434,46 @@ class AgentLoop:
             chat_id=origin_chat_id,
             content=final_content
         )
+
+    async def _simulate_streaming(
+        self,
+        text: str,
+        channel: str,
+        chat_id: str,
+    ) -> None:
+        """
+        Simulate streaming by publishing partial text as progress updates.
+        
+        Splits text into ~3 chunks and publishes each with a cursor "▌".
+        This creates a "typing" effect using the content we already have
+        from chat(), without making additional API calls.
+        """
+        import re
+        
+        # Split on sentence boundaries for natural-looking chunks
+        sentences = re.split(r'(?<=[.!?。\n])\s+', text)
+        
+        # Group sentences into ~3 chunks
+        total = len(sentences)
+        if total <= 2:
+            return  # Too short to chunk
+        
+        chunk_size = max(1, total // 3)
+        chunks = []
+        for i in range(0, total, chunk_size):
+            chunks.append(' '.join(sentences[i:i + chunk_size]))
+        
+        # Publish partial text with cursor (skip last chunk — that's the final message)
+        accumulated = ""
+        for chunk in chunks[:-1]:
+            accumulated += (" " if accumulated else "") + chunk
+            await self.bus.publish_progress(ProgressMessage(
+                channel=channel,
+                chat_id=chat_id,
+                status=accumulated + "▌",
+                metadata={"streaming": True},
+            ))
+            await asyncio.sleep(1.2)  # Pace updates to avoid Telegram rate limit
 
     @staticmethod
     def _tool_progress_status(tool_name: str, args: dict) -> str:

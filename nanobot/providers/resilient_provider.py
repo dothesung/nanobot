@@ -1,6 +1,7 @@
 """Resilient Provider — failover chain with circuit breaker pattern."""
 
 import time
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, Awaitable
 
 from loguru import logger
@@ -226,6 +227,73 @@ class ResilientProvider(LLMProvider):
             finish_reason="error",
         )
 
+    async def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream chat with failover support.
+        
+        Tries each provider's stream_chat in order.
+        If a provider fails, falls back to the next one.
+        """
+        # Parse model prefix for targeted routing
+        target_provider: str | None = None
+        bare_model = model
+        if model and "/" in model:
+            prefix, bare = model.split("/", 1)
+            target_provider = prefix.lower()
+            bare_model = bare
+
+        # Try targeted provider first, then fallback
+        providers_to_try = []
+        
+        if target_provider:
+            # Phase 1: targeted provider
+            for name, provider in self.chain:
+                if target_provider in name.lower() and not self._health[name].is_open:
+                    providers_to_try.append((name, provider, bare_model))
+            # Phase 2: fallback providers
+            for name, provider in self.chain:
+                if target_provider not in name.lower() and not self._health[name].is_open:
+                    providers_to_try.append((name, provider, None))
+        else:
+            for name, provider in self.chain:
+                if not self._health[name].is_open:
+                    providers_to_try.append((name, provider, model))
+
+        for name, provider, effective_model in providers_to_try:
+            health = self._health[name]
+            try:
+                chunks_received = False
+                async for chunk in provider.stream_chat(
+                    messages=messages,
+                    model=effective_model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ):
+                    chunks_received = True
+                    yield chunk
+                
+                if chunks_received:
+                    health.record_success()
+                    self._current_provider_name = name
+                    return
+                else:
+                    health.record_failure("Empty stream")
+                    continue
+                    
+            except Exception as e:
+                health.record_failure(str(e))
+                logger.warning(f"🔄 Stream failover: {name} failed ({str(e)[:80]}) → next")
+                continue
+
+        # All providers failed — yield error message
+        yield "⚠️ Xin lỗi, tất cả providers đang gặp sự cố. Thử lại sau nhé! 🦉"
+
     def get_default_model(self) -> str:
         """Return default model from first provider."""
         if self.chain:
@@ -249,3 +317,4 @@ class ResilientProvider(LLMProvider):
             icon = "🟢" if not h.is_open else "🔴"
             lines.append(f"{icon} {name}: {h.total_calls} calls, {h.total_errors} errors")
         return "\n".join(lines)
+

@@ -33,6 +33,7 @@ class ContextBuilder:
         self,
         skill_names: list[str] | None = None,
         user_profile: "UserProfile | None" = None,
+        semantic_context: str = "",
     ) -> str:
         """
         Build the system prompt from bootstrap files, memory, and skills.
@@ -40,6 +41,7 @@ class ContextBuilder:
         Args:
             skill_names: Optional list of skills to include.
             user_profile: Optional user profile for per-user context.
+            semantic_context: Optional relevant memory from vector search.
         
         Returns:
             Complete system prompt.
@@ -58,6 +60,10 @@ class ContextBuilder:
         memory = self.memory.get_memory_context()
         if memory:
             parts.append(f"# Memory\n\n{memory}")
+        
+        # Semantic Memory (Retrieval Augmented Generation)
+        if semantic_context:
+            parts.append(f"# Semantic Memory (Relevant Context)\n\n{semantic_context}")
         
         # Per-user memory
         if user_profile:
@@ -205,8 +211,18 @@ Ghi nhớ thông tin quan trọng vào {workspace_path}/memory/MEMORY.md
         """
         messages = []
 
+        # Retrieve semantic context (Vector Search)
+        semantic_context = ""
+        if current_message and len(current_message) > 5:
+            semantic_context = self.memory.semantic_search(current_message)
+
         # System prompt
-        system_prompt = self.build_system_prompt(skill_names, user_profile=user_profile)
+        system_prompt = self.build_system_prompt(
+            skill_names, 
+            user_profile=user_profile,
+            semantic_context=semantic_context
+        )
+        
         if channel and chat_id:
             system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
         messages.append({"role": "system", "content": system_prompt})

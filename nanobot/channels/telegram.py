@@ -501,24 +501,31 @@ class TelegramChannel(BaseChannel):
             chat_id = int(progress.chat_id)
             existing_msg_id = self._progress_message_ids.get(progress.chat_id)
             
+            # Truncate text to Telegram's 4096 char limit
+            text = progress.status
+            if len(text) > 4000:
+                text = "..." + text[-3997:]
+            
             if existing_msg_id:
                 # Edit existing progress message
                 try:
                     await self._app.bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=existing_msg_id,
-                        text=progress.status,
+                        text=text,
                     )
                 except Exception as e:
-                    logger.debug(f"Failed to edit progress message: {e}")
+                    # Telegram may reject if text is identical — ignore
+                    if "message is not modified" not in str(e).lower():
+                        logger.debug(f"Failed to edit progress message: {e}")
             else:
                 # Send new progress message and store its ID
                 sent = await self._app.bot.send_message(
                     chat_id=chat_id,
-                    text=progress.status,
+                    text=text,
                 )
                 self._progress_message_ids[progress.chat_id] = sent.message_id
-                logger.debug(f"Progress message sent: {progress.status} (msg_id={sent.message_id})")
+                logger.debug(f"Progress message sent: {text[:60]}... (msg_id={sent.message_id})")
         except Exception as e:
             logger.debug(f"Progress update failed: {e}")
     
