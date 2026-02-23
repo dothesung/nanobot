@@ -42,12 +42,13 @@ class Crawl4AITool(Tool):
     def description(self) -> str:
         return (
             "Crawl a web page and extract its content. "
+            "IMPORTANT: DO NOT use for YouTube (returns empty), use 'camofox' tool instead. "
+            "DO NOT use 'extraction_instruction' for YouTube. "
             "Supports: "
-            "1. Plain markdown extraction (default). "
+            "1. Plain markdown extraction. "
             "2. Structured extraction via CSS schema or LLM instruction. "
             "3. Dynamic pages (JS), magic mode, virtual scrolling. "
-            "4. Multi-step crawling via session_id (login -> crawl). "
-            "5. Screenshots."
+            "4. Multi-step crawling via session_id."
         )
 
     @property
@@ -163,7 +164,12 @@ class Crawl4AITool(Tool):
             params["extraction_strategy"] = {
                 "type": "LLMExtractionStrategy",
                 "params": {
-                    "provider": "openai/gpt-4o-mini",  # Default efficient model
+                    "llm_config": {
+                        "type": "LLMConfig",
+                        "params": {
+                            "provider": "openai/gpt-4o-mini",
+                        }
+                    },
                     "instruction": extraction_instruction
                 }
             }
@@ -197,7 +203,19 @@ class Crawl4AITool(Tool):
             
         if cookies:
             params["cookies"] = cookies
+
+        # ── Apply Crawl4AI "Skills" / Best Practices ──────────────────
+        # 1. Cache Mode: Enable by default for speed (unless magic is on)
+        # Note: server must support this param.
+        if not magic: 
+            params["cache_mode"] = "ENABLED" 
+        else:
+            params["cache_mode"] = "BYPASS"
             
+        # 2. Content Cleaning
+        params["remove_overlay_elements"] = True
+        params["word_count_threshold"] = 10 # Filter out short text noise
+
         # Default headers to mimic real browser
         default_headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -211,7 +229,10 @@ class Crawl4AITool(Tool):
         if headers:
             default_headers.update(headers)
             
-        params["headers"] = default_headers
+        # Note: Crawl4AI 0.5.x CrawlerRunConfig does not accept 'headers'.
+        # We exclude it from params as it will be used as CrawlerRunConfig constructor args on server.
+        # If needed, headers should be passed elsewhere or handled by server.
+        # params["headers"] = default_headers
 
         # ── Build request payload ────────────────────────────────────
         payload = {
@@ -256,6 +277,15 @@ class Crawl4AITool(Tool):
             for r in results:
                 page_url = r.get("url", url)
                 markdown = r.get("markdown", "")
+                # Crawl4AI v0.5+ returns markdown as dict with keys:
+                # raw_markdown, markdown_with_citations, fit_markdown, etc.
+                if isinstance(markdown, dict):
+                    markdown = (
+                        markdown.get("fit_markdown")
+                        or markdown.get("raw_markdown")
+                        or markdown.get("markdown_with_citations")
+                        or ""
+                    ).strip()
                 extracted = r.get("extracted_content", "")
                 metadata = r.get("metadata", {})
                 links = r.get("links", {})
@@ -287,6 +317,35 @@ class Crawl4AITool(Tool):
                     parts.append(f"\n### Nội dung:\n{markdown}")
                 elif extracted:
                     parts.append(f"\n### Nội dung trích xuất:\n{extracted}")
+                else:
+                    # Fallback: markdown empty (YouTube, heavy SPA sites)
+                    # Try to extract useful text from HTML
+                    html = r.get("html", "")
+                    if html and len(html) > 1000:
+                        import re
+                        # Extract visible text from common tags
+                        text_parts = []
+                        for tag in ["title", "h1", "h2", "h3", "p", "span", "a"]:
+                            matches = re.findall(
+                                rf"<{tag}[^>]*>([^<]+)</{tag}>",
+                                html, re.IGNORECASE
+                            )
+                            text_parts.extend(
+                                m.strip() for m in matches
+                                if len(m.strip()) > 15
+                            )
+                        # Deduplicate while preserving order
+                        seen = set()
+                        unique = []
+                        for t in text_parts:
+                            if t not in seen:
+                                seen.add(t)
+                                unique.append(t)
+                        if unique:
+                            fallback_text = "\n".join(unique[:100])
+                            parts.append(f"\n### Nội dung (trích xuất từ HTML):\n{fallback_text}")
+                        else:
+                            parts.append(f"\n⚠️ Trang trả về HTML ({len(html)} bytes) nhưng không trích xuất được nội dung markdown.")
 
                 # Media summary
                 if media and isinstance(media, dict):

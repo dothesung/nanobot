@@ -31,12 +31,17 @@ WORKDIR /app
 
 # Install Runtime dependencies & Node.js 20
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates gnupg && \
+    curl ca-certificates gnupg git && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends nodejs && \
+    apt-get install -y --no-install-recommends \
+    nodejs \
+    gh \
+    libgtk-3-0 libasound2 libdbus-glib-1-2 libx11-xcb1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages
@@ -58,6 +63,9 @@ RUN mkdir -p /root/.nanobot /root/.nanobot/workspace
 # Set Python path
 ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
 ENV PATH="/usr/local/bin:${PATH}"
+
+# Install Camoufox browser (must be after packages are copied)
+RUN python3 -m camoufox fetch
 
 # Gateway default port
 EXPOSE 18790

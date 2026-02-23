@@ -118,6 +118,13 @@ class AgentLoop:
             max_result_length=self.crawler_config.max_result_length,
             send_callback=self.bus.publish_outbound
         ))
+
+        # Camofox tool (Stealth Browser)
+        try:
+            from nanobot.agent.tools.camofox import CamofoxTool
+            self.tools.register(CamofoxTool(send_callback=self.bus.publish_outbound))
+        except ImportError:
+            pass  # Dependencies not installed
         
         # Spawn tool (for subagents)
         spawn_tool = SpawnTool(manager=self.subagents)
@@ -223,6 +230,12 @@ class AgentLoop:
         crawler_tool = self.tools.get("crawler")
         if isinstance(crawler_tool, Crawl4AITool):
             crawler_tool.set_context(msg.channel, msg.chat_id)
+
+        camofox_tool = self.tools.get("camofox")
+        if camofox_tool: 
+            # CamofoxTool might not be loaded if dependencies missing
+            if hasattr(camofox_tool, "set_context"):
+                camofox_tool.set_context(msg.channel, msg.chat_id)
         
         # Determine allowed tools based on user role
         tool_defs = self.tools.get_definitions()
@@ -491,7 +504,7 @@ class AgentLoop:
         status_map = {
             "web_search": "🔍 Đang tìm kiếm web...",
             "web_fetch": "🌐 Đang tải trang web...",
-            "crawl4ai": "🕷️ Đang cào dữ liệu web...",
+            "crawler": "🕷️ Đang cào dữ liệu web...",
             "exec": "⚙️ Đang thực thi lệnh...",
             "read_file": "📖 Đang đọc file...",
             "write_file": "✍️ Đang ghi file...",
@@ -511,7 +524,7 @@ class AgentLoop:
         elif tool_name == "exec" and args.get("command"):
             cmd = args["command"][:30]
             status = f"⚙️ Đang chạy: {cmd}..."
-        elif tool_name == "crawl4ai" and args.get("url"):
+        elif tool_name == "crawler" and args.get("url"):
             from urllib.parse import urlparse
             domain = urlparse(args["url"]).netloc[:25]
             status = f"🕷️ Đang cào: {domain}..."

@@ -17,6 +17,6 @@ rsync -avz --exclude '.git' \
 
 # 2. Restart Docker Service
 echo "🔄 Restarting bot..."
-ssh $VPS_HOST "cd $REMOTE_DIR && docker compose up -d --build"
+ssh $VPS_HOST "cd $REMOTE_DIR && docker compose up -d --build --remove-orphans"
 
 echo "✅ Done! Bot updated."
