@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -59,11 +60,11 @@ class PlaygroundServer:
             chain = [
                 ("GenPlus", GenPlusProvider(
                     api_key=p.api_key if p else None,
-                    api_base=p.api_base or "https://tools.genplusmedia.com/api/chat/gemini.php",
+                    api_base=p.api_base or "https://api.genplusmedia.com/v1/chat/completions",
                     default_model=target_model,
                 )),
                 ("Pollinations", DirectProvider(
-                    api_key="plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF",
+                    api_key=os.environ.get("POLLINATIONS_API_KEY", "plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF"),
                     api_base="https://gen.pollinations.ai/v1",
                     default_model="gemini-fast",
                 )),

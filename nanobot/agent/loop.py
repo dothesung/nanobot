@@ -108,9 +108,12 @@ class AgentLoop:
         message_tool = MessageTool(send_callback=self.bus.publish_outbound)
         self.tools.register(message_tool)
         
-        # Image generation tool
+        # Image generation tools
+        from nanobot.agent.tools.image_gen import GenerateImageTool, ImageToImageTool, EditImageTool
         image_tool = GenerateImageTool(send_callback=self.bus.publish_outbound)
         self.tools.register(image_tool)
+        self.tools.register(ImageToImageTool(send_callback=self.bus.publish_outbound))
+        self.tools.register(EditImageTool(send_callback=self.bus.publish_outbound))
         
         # Crawl4AI tool
         self.tools.register(Crawl4AITool(
@@ -274,14 +277,36 @@ class AgentLoop:
         )
         await self.bus.publish_progress(progress)
         
+        accumulated_text = ""
+        last_update_time = time.time()
+        
+        async def stream_chunk_handler(chunk: str):
+            nonlocal accumulated_text, last_update_time
+            accumulated_text += chunk
+            now = time.time()
+            # Publish streaming progress every 1.5 seconds to avoid rate limiting
+            if now - last_update_time >= 1.5:
+                last_update_time = now
+                if len(accumulated_text) > 80:
+                    await self.bus.publish_progress(ProgressMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        status=accumulated_text + "▌",
+                    ))
+        
         while iteration < self.max_iterations:
             iteration += 1
             
-            # Call LLM
+            # Reset streaming state for each iteration
+            accumulated_text = ""
+            last_update_time = time.time()
+            
+            # Call LLM — always stream for faster perceived response
             response = await self.provider.chat(
                 messages=messages,
                 tools=tool_defs if tool_defs else None,
-                model=effective_model
+                model=effective_model,
+                stream_callback=stream_chunk_handler
             )
             
             # Handle tool calls
@@ -303,32 +328,48 @@ class AgentLoop:
                     reasoning_content=response.reasoning_content,
                 )
                 
-                # Execute tools with progress updates
-                for tool_call in response.tool_calls:
-                    args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
-                    logger.info(f"Tool call: {tool_call.name}({args_str[:200]})")
+                # Execute tools — parallel when multiple, sequential otherwise
+                if len(response.tool_calls) == 1:
+                    tc = response.tool_calls[0]
+                    args_str = json.dumps(tc.arguments, ensure_ascii=False)
+                    logger.info(f"Tool call: {tc.name}({args_str[:200]})")
                     
-                    # Publish tool-specific progress
-                    tool_status = self._tool_progress_status(tool_call.name, tool_call.arguments)
+                    tool_status = self._tool_progress_status(tc.name, tc.arguments)
                     await self.bus.publish_progress(ProgressMessage(
                         channel=msg.channel,
                         chat_id=msg.chat_id,
                         status=tool_status,
                     ))
                     
-                    result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    result = await self.tools.execute(tc.name, tc.arguments)
                     messages = self.context.add_tool_result(
-                        messages, tool_call.id, tool_call.name, result
+                        messages, tc.id, tc.name, result
                     )
+                else:
+                    # Parallel execution for multiple tool calls
+                    tool_names = [tc.name for tc in response.tool_calls]
+                    logger.info(f"Parallel tool calls: {tool_names}")
+                    
+                    await self.bus.publish_progress(ProgressMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        status=f"🔧 Đang chạy {len(response.tool_calls)} tools song song...",
+                    ))
+                    
+                    async def _exec_tool(tc):
+                        return await self.tools.execute(tc.name, tc.arguments)
+                    
+                    results = await asyncio.gather(
+                        *[_exec_tool(tc) for tc in response.tool_calls]
+                    )
+                    
+                    for tc, result in zip(response.tool_calls, results):
+                        messages = self.context.add_tool_result(
+                            messages, tc.id, tc.name, result
+                        )
             else:
                 # No tool calls — use the content we already have
                 final_content = response.content
-                
-                # Simulate streaming by chunking the response text
-                if final_content and len(final_content) > 80:
-                    await self._simulate_streaming(
-                        final_content, msg.channel, msg.chat_id
-                    )
                 break
         
         if final_content is None:
@@ -458,45 +499,7 @@ class AgentLoop:
             content=final_content
         )
 
-    async def _simulate_streaming(
-        self,
-        text: str,
-        channel: str,
-        chat_id: str,
-    ) -> None:
-        """
-        Simulate streaming by publishing partial text as progress updates.
-        
-        Splits text into ~3 chunks and publishes each with a cursor "▌".
-        This creates a "typing" effect using the content we already have
-        from chat(), without making additional API calls.
-        """
-        import re
-        
-        # Split on sentence boundaries for natural-looking chunks
-        sentences = re.split(r'(?<=[.!?。\n])\s+', text)
-        
-        # Group sentences into ~3 chunks
-        total = len(sentences)
-        if total <= 2:
-            return  # Too short to chunk
-        
-        chunk_size = max(1, total // 3)
-        chunks = []
-        for i in range(0, total, chunk_size):
-            chunks.append(' '.join(sentences[i:i + chunk_size]))
-        
-        # Publish partial text with cursor (skip last chunk — that's the final message)
-        accumulated = ""
-        for chunk in chunks[:-1]:
-            accumulated += (" " if accumulated else "") + chunk
-            await self.bus.publish_progress(ProgressMessage(
-                channel=channel,
-                chat_id=chat_id,
-                status=accumulated + "▌",
-                metadata={"streaming": True},
-            ))
-            await asyncio.sleep(1.2)  # Pace updates to avoid Telegram rate limit
+
 
     @staticmethod
     def _tool_progress_status(tool_name: str, args: dict) -> str:

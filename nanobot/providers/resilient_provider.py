@@ -108,6 +108,7 @@ class ResilientProvider(LLMProvider):
         model: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        stream_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """
         Try each provider in the chain until one succeeds.
@@ -153,6 +154,7 @@ class ResilientProvider(LLMProvider):
                     model=effective_model,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    stream_callback=stream_callback,
                 )
 
                 if response.finish_reason == "error":
@@ -196,6 +198,7 @@ class ResilientProvider(LLMProvider):
                         model=None,  # Use provider's default model
                         max_tokens=max_tokens,
                         temperature=temperature,
+                        stream_callback=stream_callback,
                     )
 
                     if response.finish_reason == "error":

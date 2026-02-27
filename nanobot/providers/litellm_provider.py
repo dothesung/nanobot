@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 import litellm
 from litellm import acompletion
@@ -106,6 +106,7 @@ class LiteLLMProvider(LLMProvider):
         model: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        stream_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """
         Send a chat completion request via LiteLLM.
@@ -116,6 +117,7 @@ class LiteLLMProvider(LLMProvider):
             model: Model identifier (e.g., 'anthropic/claude-sonnet-4-5').
             max_tokens: Maximum tokens in response.
             temperature: Sampling temperature.
+            stream_callback: Optional async callback for streamed text.
         
         Returns:
             LLMResponse with content and/or tool calls.
@@ -144,9 +146,67 @@ class LiteLLMProvider(LLMProvider):
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         
+        if stream_callback:
+            kwargs["stream"] = True
+            
         try:
             response = await acompletion(**kwargs)
-            return self._parse_response(response)
+            
+            if stream_callback:
+                full_content = ""
+                full_reasoning = ""
+                tool_calls_dict = {}
+                finish_reason = "stop"
+                
+                async for chunk in response:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    
+                    if getattr(delta, "content", None):
+                        full_content += delta.content
+                        await stream_callback(delta.content)
+                        
+                    if getattr(delta, "reasoning_content", None):
+                        full_reasoning += delta.reasoning_content
+                        
+                    if hasattr(delta, "tool_calls") and delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = getattr(tc, "index", 0)
+                            if idx not in tool_calls_dict:
+                                tool_calls_dict[idx] = {"id": getattr(tc, "id", "") or "", "name": getattr(getattr(tc, "function", None), "name", "") or "", "arguments": ""}
+                            else:
+                                if getattr(tc, "id", None):
+                                    tool_calls_dict[idx]["id"] += tc.id
+                                if getattr(getattr(tc, "function", None), "name", None):
+                                    tool_calls_dict[idx]["name"] += tc.function.name
+                            if getattr(getattr(tc, "function", None), "arguments", None):
+                                tool_calls_dict[idx]["arguments"] += tc.function.arguments
+                                
+                    if getattr(chunk.choices[0], "finish_reason", None):
+                        finish_reason = chunk.choices[0].finish_reason
+                
+                tool_calls = []
+                for idx, tc_data in sorted(tool_calls_dict.items()):
+                    args = tc_data["arguments"]
+                    try:
+                        args = json.loads(args) if args else {}
+                    except (json.JSONDecodeError, TypeError):
+                        args = {"raw": args}
+                    tool_calls.append(ToolCallRequest(
+                        id=tc_data["id"] or f"call_{idx}",
+                        name=tc_data["name"],
+                        arguments=args
+                    ))
+                
+                return LLMResponse(
+                    content=full_content if full_content else None,
+                    tool_calls=tool_calls,
+                    finish_reason=finish_reason,
+                    reasoning_content=full_reasoning if full_reasoning else None
+                )
+            else:
+                return self._parse_response(response)
         except Exception as e:
             # Return error as content for graceful handling
             return LLMResponse(

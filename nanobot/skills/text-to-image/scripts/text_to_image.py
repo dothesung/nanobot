@@ -25,7 +25,7 @@ import urllib.request
 import urllib.error
 
 API_URL = "https://tools.genplusmedia.com/api/api.php?path=/text-to-image"
-API_KEY = "Genplus123"
+API_KEY = os.environ.get("GENPLUS_API_KEY", "Genplus123")
 
 RATIO_MAP = {
     "landscape": "IMAGE_ASPECT_RATIO_LANDSCAPE",

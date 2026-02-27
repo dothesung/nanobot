@@ -1,8 +1,9 @@
 """Direct HTTP provider — bypasses LiteLLM for custom OpenAI-compatible endpoints."""
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 import aiohttp
 
@@ -44,6 +45,7 @@ class DirectProvider(LLMProvider):
         model: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        stream_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """Send a chat completion request via direct HTTP POST."""
         model = model or self.default_model
@@ -92,13 +94,34 @@ class DirectProvider(LLMProvider):
                             finish_reason="error",
                         )
 
-                    return self._parse_response(data)
+                    response = self._parse_response(data)
+                    
+                    # Post-hoc streaming: feed content to callback in chunks
+                    if stream_callback and response.content and not response.tool_calls:
+                        await self._feed_stream_callback(response.content, stream_callback)
+                    
+                    return response
 
         except Exception as e:
             return LLMResponse(
                 content=f"Error calling endpoint: {str(e)}",
                 finish_reason="error",
             )
+
+    @staticmethod
+    async def _feed_stream_callback(
+        content: str,
+        callback: Callable[[str], Awaitable[None]],
+        chunk_size: int = 12,
+    ) -> None:
+        """Feed already-received content to stream_callback in small chunks."""
+        words = content.split()
+        for i in range(0, len(words), chunk_size):
+            chunk = " ".join(words[i:i + chunk_size])
+            if i > 0:
+                chunk = " " + chunk
+            await callback(chunk)
+            await asyncio.sleep(0.05)
 
     async def stream_chat(
         self,

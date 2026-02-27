@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 
 @dataclass
@@ -49,6 +49,7 @@ class LLMProvider(ABC):
         model: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        stream_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """
         Send a chat completion request.
@@ -59,6 +60,7 @@ class LLMProvider(ABC):
             model: Model identifier (provider-specific).
             max_tokens: Maximum tokens in response.
             temperature: Sampling temperature.
+            stream_callback: Optional async callback for streaming text chunks.
         
         Returns:
             LLMResponse with content and/or tool calls.

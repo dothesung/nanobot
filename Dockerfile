@@ -67,6 +67,7 @@ ENV PATH="/usr/local/bin:${PATH}"
 # Install Camoufox browser (must be after packages are copied)
 RUN python3 -m camoufox fetch
 
+
 # Gateway default port
 EXPOSE 18790
 

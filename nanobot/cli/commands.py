@@ -354,7 +354,7 @@ def _make_provider(config):
         chain.append((
             "Pollinations",
             DirectProvider(
-                api_key="plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF",
+                api_key=os.environ.get("POLLINATIONS_API_KEY", "plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF"),
                 api_base="https://gen.pollinations.ai/v1",
                 default_model="gemini-fast",
             ),

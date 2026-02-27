@@ -315,7 +315,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         is_local=False,
         detect_by_key_prefix="",
         detect_by_base_keyword="genplusmedia",
-        default_api_base="https://tools.genplusmedia.com/api/chat/gemini.php",
+        default_api_base="https://api.genplusmedia.com/v1/chat/completions",
         strip_model_prefix=False,
         model_overrides=(),
     ),

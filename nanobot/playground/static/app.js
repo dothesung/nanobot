@@ -21,17 +21,12 @@ const state = {
 const ENDPOINT_PRESETS = {
     genplus_gemini: {
         name: 'GenPlus Gemini API',
-        url: 'https://gemini-api.genplusmedia.com/v1/chat/completions',
-        key: 'sk-gemini-93LP0t8JjG4o4oqEF5MzRQ',
+        url: 'https://api.genplusmedia.com/v1/chat/completions',
+        key: 'Genplus123',
         models: [
-            { id: 'gemini-3.0-pro', name: 'Gemini 3.0 Pro' },
-            { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-            { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
-            { id: 'gemini-2.0-flash-thinking', name: 'Gemini 2.0 Flash Thinking' },
-            { id: 'unspecified', name: 'Default Model' },
+            { id: 'genplus/genplus', name: 'GenPlus Default' },
         ],
-        defaultModel: 'gemini-3.0-pro',
+        defaultModel: 'genplus/genplus',
     },
     pollinations: {
         name: 'Pollinations AI',

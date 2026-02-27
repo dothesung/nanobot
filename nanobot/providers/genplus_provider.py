@@ -1,7 +1,9 @@
 """GenPlus Gemini provider - Custom LLM provider using GenPlus Gemini API."""
 
 import aiohttp
-from typing import Any
+import asyncio
+import os
+from typing import Any, Callable, Awaitable
 
 from loguru import logger
 from nanobot.providers.base import LLMProvider, LLMResponse
@@ -44,11 +46,12 @@ class GenPlusProvider(LLMProvider):
         self,
         api_key: str | None = None,
         api_base: str | None = None,
-        default_model: str = "genplus/gemini-3.0-flash",
+        default_model: str = "genplus/genplus",
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
-        self.api_url = api_base or "https://tools.genplusmedia.com/api/chat/gemini.php"
+        self.api_url = api_base or "https://api.genplusmedia.com/v1/chat/completions"
+        self.api_key_header = api_key or os.environ.get("GENPLUS_API_KEY", "Genplus123")
     
     async def chat(
         self,
@@ -57,6 +60,7 @@ class GenPlusProvider(LLMProvider):
         model: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        stream_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """
         Send a chat completion request to GenPlus Gemini API.
@@ -92,6 +96,9 @@ class GenPlusProvider(LLMProvider):
         if not user_prompt and messages:
             user_prompt = messages[-1].get("content", "")
         
+        # Build final prompt combining system and user context
+        full_prompt = f"{sys_prompt}\n\n"
+        
         # Include tool results in prompt so model can see what tools returned
         if tool_results:
             results_str = "\n\n".join(tool_results[-3:])  # Last 3 results to avoid too large prompt
@@ -107,44 +114,48 @@ class GenPlusProvider(LLMProvider):
             context_str = "\n".join(conversation_context[-3:])
             user_prompt = f"[Ngữ cảnh cuộc trò chuyện trước]:\n{context_str}\n\n[Câu hỏi mới]: {user_prompt}"
         
+        full_prompt += user_prompt
+
         # --- Tool Handling Setup ---
-        # If tools are provided, add instructions to system prompt
+        # If tools are provided, add instructions to system prompt (prepended to prompt)
         if tools:
             tool_prompt = self._construct_tool_system_prompt(tools)
-            sys_prompt += "\n\n" + tool_prompt
+            full_prompt = tool_prompt + "\n\n" + full_prompt
 
         # --- Try GenPlus API first ---
         try:
             async with aiohttp.ClientSession() as session:
-                # Determine model name for API (strip genplus/ prefix)
-                api_model = (model or self.default_model).replace("genplus/", "")
-                
                 payload = {
-                    "prompt": user_prompt,
-                    "sys_prompt": sys_prompt,
-                    "model": api_model,
+                    "prompt": full_prompt,
+                    "model": "", # Leave empty as requested
+                }
+                
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-API-Key": self.api_key_header
                 }
                 
                 async with session.post(
                     self.api_url,
                     json=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers=headers,
                     timeout=aiohttp.ClientTimeout(total=60),
                 ) as response:
-                    # Use content_type=None to skip MIME validation
-                    # GenPlus sometimes returns text/html content-type with valid JSON body
                     try:
                         result = await response.json(content_type=None)
                     except Exception:
                         raw = await response.text()
-                        logger.warning(f"GenPlus JSON parse failed, raw response: {raw[:200]}")
+                        logger.warning(f"GenPlus JSON parse failed (Status {response.status}), raw: {raw[:200]}")
                         return LLMResponse(
-                            content=f"API Error: Invalid JSON response",
+                            content=f"API Error: Invalid response ({response.status})",
                             finish_reason="error",
                         )
                     
-                    if result.get("status"):
-                        content = result.get("data", "")
+                    # New logic: Parse OpenAI-style response
+                    # Expected: {"choices": [{"message": {"content": "..."}}]}
+                    choices = result.get("choices", [])
+                    if choices and isinstance(choices, list):
+                        content = choices[0].get("message", {}).get("content", "")
                         content = self._clean_response(content)
                         
                         # Try to parse tool calls from content
@@ -152,28 +163,52 @@ class GenPlusProvider(LLMProvider):
                             tool_calls, cleaned_content = self._parse_tool_calls(content)
                             if tool_calls:
                                 return LLMResponse(
-                                    content=cleaned_content or "Thinking...", # Keep content if any thinking process is shown
+                                    content=cleaned_content or "Thinking...",
                                     tool_calls=tool_calls,
                                     finish_reason="tool_calls",
                                 )
+                        
+                        # Post-hoc streaming: feed content to callback in chunks
+                        if stream_callback and content:
+                            await self._feed_stream_callback(content, stream_callback)
                         
                         return LLMResponse(
                             content=content,
                             finish_reason="stop",
                         )
                     else:
-                        error_msg = result.get('message', 'Unknown error')
+                        error_msg = result.get('error', {}).get('message', 'Unknown error structure')
                         logger.warning(f"GenPlus API error: {error_msg}")
                         return LLMResponse(
                             content=f"API Error: {error_msg}",
                             finish_reason="error",
                         )
+
         except Exception as e:
             logger.warning(f"GenPlus API exception: {e}")
             return LLMResponse(
                 content=f"API Error: {str(e)}",
                 finish_reason="error",
             )
+    
+    @staticmethod
+    async def _feed_stream_callback(
+        content: str,
+        callback: Callable[[str], Awaitable[None]],
+        chunk_size: int = 12,
+    ) -> None:
+        """Feed already-received content to stream_callback in small chunks.
+        
+        This simulates streaming for APIs that don't support SSE,
+        so the user sees text appearing progressively.
+        """
+        words = content.split()
+        for i in range(0, len(words), chunk_size):
+            chunk = " ".join(words[i:i + chunk_size])
+            if i > 0:
+                chunk = " " + chunk
+            await callback(chunk)
+            await asyncio.sleep(0.05)  # Small delay for natural feel
     
     def _construct_tool_system_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Construct the system prompt supplement for tool usage."""

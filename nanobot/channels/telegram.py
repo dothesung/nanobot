@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 import re
 from typing import TYPE_CHECKING
 
@@ -88,19 +89,19 @@ def _markdown_to_telegram_html(text: str) -> str:
 SPECIALIZED_MODELS = {
     'search': {
         'url': 'https://gen.pollinations.ai/v1/chat/completions',
-        'key': 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF',
+        'key': os.environ.get("POLLINATIONS_API_KEY", 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF'),
         'model': 'perplexity-fast',
         'system': 'Bạn là GenBot 🦉 - trợ lý tìm kiếm thông minh. Luôn trả lời bằng tiếng Việt. Tìm kiếm thông tin mới nhất và trả lời ngắn gọn, rõ ràng, có nguồn trích dẫn nếu có. Dùng emoji phù hợp.',
     },
     'vision': {
         'url': 'https://gen.pollinations.ai/v1/chat/completions',
-        'key': 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF',
+        'key': os.environ.get("POLLINATIONS_API_KEY", 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF'),
         'model': 'gemini-fast',
         'system': 'Bạn là GenBot 🦉 - trợ lý vision thông minh. Luôn trả lời bằng tiếng Việt. Phân tích ảnh chi tiết, mô tả nội dung, nhận diện vật thể, đọc text trong ảnh. Dùng emoji phù hợp.',
     },
     'code': {
         'url': 'https://gen.pollinations.ai/v1/chat/completions',
-        'key': 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF',
+        'key': os.environ.get("POLLINATIONS_API_KEY", 'plln_sk_CtcGj14XKaIKRXm8XeqguwQiQxmZ6a6tHAMMpdrhLTxiIomsp1Qv9U9nS6HfBviF'),
         'model': 'qwen-coder',
         'system': 'Bạn là GenBot 🦉 - trợ lý lập trình chuyên nghiệp. Luôn trả lời bằng tiếng Việt (giải thích) nhưng code viết bằng ngôn ngữ phù hợp. Viết code sạch, có comment, có giải thích. Dùng markdown code blocks.',
     },
@@ -872,11 +873,6 @@ class TelegramChannel(BaseChannel):
             keyboard = [
                 # GenPlus Primary
                 [InlineKeyboardButton("⭐ GenPlus (mặc định)", callback_data="model:genplus/genplus")],
-                # GenPlus Custom Endpoint models
-                [InlineKeyboardButton("🔷 Gemini 3.0 Flash", callback_data="model:genplus/gemini-3.0-flash"),
-                 InlineKeyboardButton("🔷 Gemini 2.5 Flash", callback_data="model:genplus/gemini-2.5-flash")],
-                [InlineKeyboardButton("🔷 Gemini 2.5 Pro", callback_data="model:genplus/gemini-2.5-pro"),
-                 InlineKeyboardButton("🔷 Gemini 3 Pro", callback_data="model:genplus/gemini-3.0-pro")],
                 # Pollinations free models
                 [InlineKeyboardButton("⚡ Gemini Flash", callback_data="model:gemini-fast"),
                  InlineKeyboardButton("⚡ GPT-5 Nano", callback_data="model:openai-fast")],
@@ -942,7 +938,7 @@ class TelegramChannel(BaseChannel):
         }
         headers = {
             "Content-Type": "application/json",
-            "X-API-Key": "Genplus123",
+            "X-API-Key": os.environ.get("GENPLUS_API_KEY", "Genplus123"),
         }
         
         try:
